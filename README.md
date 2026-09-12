@@ -1,8 +1,8 @@
-# iOSRealRun-cli-18
+# iOS RealRun
 
-在电脑上模拟 iPhone/iPad GPS 定位，实现虚拟跑步 —— 沿真实路线自动模拟运动轨迹。
+在 Windows 或 macOS 上模拟 iPhone/iPad GPS 定位，沿真实路线自动模拟跑步轨迹。
 
-基于 [iOSRealRun-cli-17](https://github.com/iOSRealRun/iOSRealRun-cli-17) 修改，适配 iOS 18，更新了 [pymobiledevice3](https://github.com/doronz88/pymobiledevice3) 依赖。
+项目使用 [pymobiledevice3](https://github.com/doronz88/pymobiledevice3) 连接 iOS 设备，并通过 Apple DVT `LocationSimulation` 注入定位。
 
 ---
 
@@ -14,23 +14,23 @@
 
 ## 测试环境
 
-| 项目 | 版本 |
-|------|------|
+| 项目     | 版本              |
+| -------- | ----------------- |
 | 操作系统 | macOS, Windows 11 |
-| Python | 3.11+ |
-| iOS | 18+ |
+| Python   | 3.11+             |
+| iOS      | 17+，已验证 iOS 26.3.1 |
 
 ## 前置准备
 
 1. **Windows 需要安装 iTunes**（提供设备通信驱动）
-2. iOS 设备系统版本 ≥ 18
-3. 已安装 Python 3 和 pip
+2. iOS 设备系统版本 ≥ 17，已验证 iOS 26.3.1
+3. 源码运行需要 Python 3.11+；使用 Windows 安装包无需安装 Python
 4. **只能有一台 iOS 设备连接电脑**
 5. 需要管理员/root 权限（创建 tun 设备）
 
 ## 快速开始
 
-### 1. 安装依赖
+### 1. 安装依赖（源码运行）
 
 ```bash
 pip install -r requirements.txt
@@ -77,22 +77,26 @@ routeConfig: "ZJGroute.txt"  # 路线文件
 
 仓库内置三条路线（坐标从百度地图取的 BD-09，程序自动转为 WGS-84）：
 
-| 文件 | 路线 |
-|------|------|
+| 文件           | 路线                   |
+| -------------- | ---------------------- |
 | `ZJGroute.txt` | 浙大紫金港东操（默认） |
-| `YQroute.txt` | 浙大玉泉 |
-| `HNroute.txt` | 浙大海宁 |
+| `YQroute.txt`  | 浙大玉泉               |
+| `HNroute.txt`  | 浙大海宁               |
 
 ## 项目结构
 
 ```
-iOSRealRun-cli-18/
+ios-realrun/
 ├── main.py                  # 入口（支持 -m 限时运行）
 ├── run.py                   # 核心：坐标转换、插值、定位注入
 ├── config.py                # 配置加载
 ├── config.yaml              # 速度 / 路线配置
 ├── requirements.txt         # Python 依赖
-├── start.bat                # 一键启动脚本（推荐）
+├── launcher.py              # Windows 图形启动器
+├── worker.py                # GUI 后台 worker
+├── build_windows.ps1        # Windows 打包脚本
+├── installer.iss            # Inno Setup 安装器配置
+├── start.bat                # 命令行一键启动脚本
 ├── start.ps1                # PowerShell 版启动脚本
 │
 ├── init/
@@ -120,11 +124,11 @@ python main.py              # 无限运行（需 Ctrl+C 手动停止）
 
 **`start.bat`（推荐）** — 双击运行，自动提权 → 挂载镜像 → 启动 → 到时停止：
 
-| 命令 | 说明 |
-|------|------|
-| 双击 `start.bat` | 默认跑 **30 分钟** |
-| `start.bat -m 45` | 跑 45 分钟 |
-| `start.bat -m 0` | 无限运行 |
+| 命令                 | 说明                 |
+| -------------------- | -------------------- |
+| 双击`start.bat`      | 默认跑**30 分钟**    |
+| `start.bat -m 45`    | 跑 45 分钟           |
+| `start.bat -m 0`     | 无限运行             |
 | `start.bat -m 20 -n` | 跑 20 分钟，跳过挂载 |
 
 **`start.ps1`** — PowerShell 版本（功能同上）
@@ -133,19 +137,19 @@ python main.py              # 无限运行（需 Ctrl+C 手动停止）
 
 ## 升级记录
 
-### pymobiledevice3 4.20.20 → 9.19.0
+### pymobiledevice3 4.x → 9.x
 
-原项目锁定的 `pymobiledevice3==4.20.20` 在 iOS 新版上 `LocationSimulation` 注入会超时。升级到 9.19.0 后涉及以下破坏性变更：
+旧版 `pymobiledevice3` 在新 iOS 上可能导致 `LocationSimulation` 注入超时。本项目使用异步 DVT API，当前已验证 iOS 26.3.1。
 
 #### 波及文件及修改
 
-| 文件 | 变更 |
-|------|------|
-| `run.py` | `DvtSecureSocketProxyService` → `DvtProvider`（async context manager）；`LocationSimulation.set()` 改为 `async`；同步 `time.sleep` 改为 `asyncio.sleep` |
-| `init/init.py` | `init()` 改为 `async`，适配 `connect` 模块 async 化 |
-| `driver/connect.py` | `create_using_usbmux()` 改为 `await`；`developer_mode_status` 属性 → `get_developer_mode_status()` 方法（async）；`AmfiService` 方法均为 async |
-| `main.py` | 新增 `argparse` 支持 `-m`/`--minutes` 参数；`.init()` → `await`；捕获 `asyncio.TimeoutError` 实现自动停止 |
-| `requirements.txt` | `pymobiledevice3>=9.19.0` |
+| 文件                | 变更                                                                                                                                                    |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `run.py`            | `DvtSecureSocketProxyService` → `DvtProvider`（async context manager）；`LocationSimulation.set()` 改为 `async`；同步 `time.sleep` 改为 `asyncio.sleep` |
+| `init/init.py`      | `init()` 改为 `async`，适配 `connect` 模块 async 化                                                                                                     |
+| `driver/connect.py` | `create_using_usbmux()` 改为 `await`；`developer_mode_status` 属性 → `get_developer_mode_status()` 方法（async）；`AmfiService` 方法均为 async          |
+| `main.py`           | 新增`argparse` 支持 `-m`/`--minutes` 参数；`.init()` → `await`；捕获 `asyncio.TimeoutError` 实现自动停止                                                |
+| `requirements.txt`  | `pymobiledevice3>=9.19.0`                                                                                                                               |
 
 #### 核心 API 变化
 
@@ -162,6 +166,26 @@ async with DvtProvider(rsd) as dvt:
     async with LocationSimulation(dvt) as loc_sim:
         await loc_sim.set(lat, lng)                   # async
 ```
+
+---
+
+## Windows 图形版
+
+项目提供一个名为 **iOS RealRun** 的 Windows 启动器，支持设备检查、自动挂载开发者镜像、路线/速度/时长配置以及运行日志。
+
+### 构建安装包
+
+在已准备好 `venv` 的项目目录中，以 PowerShell 执行：
+
+```powershell
+.\build_windows.ps1
+```
+
+脚本会生成 `dist\installer\iOS-RealRun-Setup.exe`。安装后从桌面 **iOS RealRun** 快捷方式启动，首次运行请在 UAC 提示中允许管理员权限。
+
+### 使用顺序
+
+解锁设备并点击“信任此电脑” → 选择路线和参数 → 点击“开始模拟”。程序会自动检查设备并挂载开发者镜像。
 
 ---
 

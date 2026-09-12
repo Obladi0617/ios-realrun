@@ -33,7 +33,7 @@ logging.getLogger('urllib3.connectionpool').setLevel(logging.DEBUG if debug else
 
 
 async def main():
-    parser = argparse.ArgumentParser(description="iOS 虚拟定位模拟跑步")
+    parser = argparse.ArgumentParser(description="iOS RealRun virtual location runner")
     parser.add_argument("-m", "--minutes", type=int, default=0,
                         help="运行时长（分钟），不指定则无限运行")
     args = parser.parse_args()

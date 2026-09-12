@@ -1,6 +1,6 @@
-# 校园跑新手指南
+# iOS RealRun 使用指南
 
-项目仓库：[iOSRealRun-cli-18](https://github.com/ChenyuHeee/iOSRealRun-cli-18)
+项目仓库：`iOS RealRun`
 
 本指南面向第一次接触命令行的同学，按照下面的流程一步步操作即可让 iOS 设备开始“模拟跑步”。使用过程中如遇报错，请耐心核对每个步骤是否完成、指令是否输入正确。
 
@@ -27,12 +27,12 @@
 2. **获取项目代码**
    1. 如果使用 Git：在资源管理器中定位到希望存放项目的文件夹，地址栏输入 `cmd` 并回车，随后执行：
       ```shell
-      git clone https://github.com/ChenyuHeee/iOSRealRun-cli-18.git
-      cd iOSRealRun-cli-18
+      git clone https://github.com/你的用户名/ios-realrun.git
+      cd ios-realrun
       ```
-   2. 如果下载 ZIP：将压缩包解压后右键空白处选择“在终端中打开”或地址栏输入 `cmd`，然后 `cd` 到解压出来的 `iOSRealRun-cli-18` 文件夹，例如：
+   2. 如果下载 ZIP：将压缩包解压后右键空白处选择“在终端中打开”或地址栏输入 `cmd`，然后 `cd` 到解压出来的 `ios-realrun` 文件夹，例如：
       ```shell
-      cd "%USERPROFILE%\Downloads\iOSRealRun-cli-18"
+      cd "%USERPROFILE%\Downloads\ios-realrun"
       ```
 
 3. **创建并启用虚拟环境（推荐）**
@@ -67,7 +67,7 @@
       首次运行会自动下载并挂载开发者镜像，结束后返回 `Mounted developer image` 类似提示即可。
 
 7. **启动模拟跑步**
-   1. 回到“以管理员身份”运行的终端窗口（同样需要激活虚拟环境），确认当前目录是项目根目录，可先输入 `cd` 查看路径，若不在项目文件夹内请执行 `cd C:\Users\你的用户名\Downloads\iOSRealRun-cli-18`（将路径替换为你保存项目的真实位置）。
+   1. 回到“以管理员身份”运行的终端窗口（同样需要激活虚拟环境），确认当前目录是项目根目录，可先输入 `cd` 查看路径，若不在项目文件夹内请切换到 `ios-realrun` 目录。
    2. 执行：
       ```shell
       python main.py
@@ -103,8 +103,8 @@
 2. **获取项目代码**
    1. 若使用 Git：
       ```shell
-      git clone https://github.com/ChenyuHeee/iOSRealRun-cli-18.git
-      cd iOSRealRun-cli-18
+      git clone https://github.com/你的用户名/ios-realrun.git
+      cd ios-realrun
       ```
    2. 若下载 ZIP：用 Finder 解压后，右键项目文件夹选择“在终端中打开”。
 
@@ -136,7 +136,7 @@
       需要输入电脑密码。若提示权限不足，可在“系统设置 > 隐私与安全性 > 完整磁盘访问”中为终端授予权限后重试。
 
 7. **启动模拟跑步**
-   1. 确认当前目录仍在项目根目录，可执行 `pwd` 查看路径；若末尾不是 `iOSRealRun-cli-18`，请执行 `cd ~/路径/iOSRealRun-cli-18`（将 `~/路径/` 替换成你解压或克隆时的实际位置），然后在同一终端执行：
+   1. 确认当前目录仍在项目根目录，可执行 `pwd` 查看路径；若末尾不是 `ios-realrun`，请切换到对应项目目录，然后在同一终端执行：
       ```shell
       sudo python3 main.py
       ```
