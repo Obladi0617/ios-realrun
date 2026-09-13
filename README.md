@@ -247,20 +247,32 @@ async with DvtProvider(rsd) as dvt:
 
 **解决办法（任选其一）：**
 
-1. **复制缓存（推荐，可离线）**
+1. **直接下载缓存包（最快）**
+
+   **[⬇️ 下载 Xcode_iOS_DDI_Personalized.zip](https://github.com/Obladi0617/ios-realrun/releases/latest/download/Xcode_iOS_DDI_Personalized.zip)**（约 15 MB）
+
+   解压后把里面的 `Image.dmg`、`Image.trustcache`、`BuildManifest.plist` 三个文件放到：
+
+   ```text
+   C:\Users\<新电脑用户名>\.pymobiledevice3\Xcode_iOS_DDI_Personalized\
+   ```
+
+   放好后重新点击“开始模拟”即可，无需联网下载。
+
+2. **从已成功的电脑复制**
    把已成功电脑上的整个目录复制到新电脑相同位置：
 
    ```text
-   源：C:\Users\<用户名>\.pymobiledevice3\Xcode_iOS_DDI_Personalized
+   源：  C:\Users\<用户名>\.pymobiledevice3\Xcode_iOS_DDI_Personalized
    目标：C:\Users\<新电脑用户名>\.pymobiledevice3\Xcode_iOS_DDI_Personalized
    ```
 
    注意：目录要放在**实际运行程序的那个用户**的家目录下（程序以管理员运行时通常是同一个用户）。
 
-2. **确保联网**
+3. **确保联网**
    新电脑需要能访问 `api.github.com` 与 Apple 的 `gs.apple.com`（用于获取个性化授权票据）。
 
-3. **确认前置条件**
+4. **确认前置条件**
    - 以管理员权限运行（UAC 点"是"）
    - 已安装 iTunes（Apple Mobile Device 服务）
    - 设备已解锁并信任此电脑，且已开启开发者模式
