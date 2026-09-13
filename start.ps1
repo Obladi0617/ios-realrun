@@ -60,10 +60,12 @@ if (-not $NoMount) {
     $mountResult = & $python -m pymobiledevice3 mounter auto-mount 2>&1
     if ($LASTEXITCODE -eq 0 -and ($mountResult -match "mounted successfully")) {
         Write-Host "  挂载成功" -ForegroundColor White
-    } else {
+    }
+    else {
         Write-Host "  挂载失败，可直接运行试一下" -ForegroundColor Yellow
     }
-} else {
+}
+else {
     Write-Host ""
     Write-Host "[2/3] 跳过挂载" -ForegroundColor Yellow
 }
@@ -78,7 +80,8 @@ if ($Minutes -gt 0) {
     Write-Host "  到时会自动停止并恢复真实定位" -ForegroundColor White
     Write-Host "  按 Ctrl+C 可提前结束" -ForegroundColor White
     & $python main.py -m $Minutes
-} else {
+}
+else {
     Write-Host "  无限运行中，按 Ctrl+C 停止" -ForegroundColor White
     & $python main.py
 }

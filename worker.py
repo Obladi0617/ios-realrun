@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import sys
+from pathlib import Path
 
 
 async def check_device():
@@ -27,7 +28,7 @@ async def mount_image():
 def run_main(args):
     import config
 
-    config.config.routeConfig = args.route
+    config.config.routeConfig = str((Path(__file__).resolve().parent / args.route).resolve())
     config.config.v = args.speed
     print("正在准备设备和开发者镜像...", flush=True)
     asyncio.run(mount_image())

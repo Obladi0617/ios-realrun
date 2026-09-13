@@ -4,13 +4,25 @@ import signal
 import subprocess
 import sys
 import threading
+import ctypes
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, scrolledtext, ttk
 
 
 BASE_DIR = Path(__file__).resolve().parent
-WORKER = BASE_DIR / "iOSRealRun-worker.exe"
+
+
+def acquire_gui_instance():
+    if sys.platform != "win32":
+        return True
+    mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "Global\\iOSRealRunGui")
+    if not mutex:
+        return True
+    if ctypes.windll.kernel32.GetLastError() == 183:
+        messagebox.showinfo("iOS RealRun", "iOS RealRun 已经在运行中。")
+        return False
+    return True
 
 
 class RunnerApp:
@@ -93,8 +105,11 @@ class RunnerApp:
         self.write_log("控制台已就绪。请解锁设备并点击“检查设备”。")
 
     def worker_command(self, *args):
-        if WORKER.exists():
-            return [str(WORKER), *args]
+        if getattr(sys, "frozen", False):
+            worker = BASE_DIR / "iOSRealRun-worker.exe"
+            if worker.exists():
+                return [str(worker), *args]
+            return [sys.executable, "--worker", *args]
         return [sys.executable, str(BASE_DIR / "worker.py"), *args]
 
     def write_log(self, text):
@@ -178,6 +193,14 @@ class RunnerApp:
 
 
 if __name__ == "__main__":
+    if "--worker" in sys.argv:
+        sys.argv = [sys.argv[0], *sys.argv[sys.argv.index("--worker") + 1:]]
+        import worker
+
+        worker.main()
+        raise SystemExit
+    if not acquire_gui_instance():
+        raise SystemExit
     app_root = tk.Tk()
     RunnerApp(app_root)
     app_root.mainloop()

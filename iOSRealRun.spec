@@ -1,5 +1,5 @@
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, copy_metadata
 
 
 root = Path(SPECPATH)
@@ -11,6 +11,8 @@ for package in ("pymobiledevice3", "developer_disk_image", "geopy"):
     datas.extend(package_datas)
     binaries.extend(package_binaries)
     hiddenimports.extend(package_hiddenimports)
+
+datas.extend(copy_metadata("pyimg4"))
 
 
 launcher_analysis = Analysis([str(root / "launcher.py")], pathex=[str(root)], datas=datas, binaries=binaries, hiddenimports=hiddenimports, noarchive=False)

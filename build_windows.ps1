@@ -6,6 +6,8 @@ if (-not (Test-Path $python)) {
     throw "Missing venv\Scripts\python.exe. Prepare the project environment first."
 }
 
+Remove-Item -LiteralPath (Join-Path $PSScriptRoot "build"), (Join-Path $PSScriptRoot "dist") -Recurse -Force -ErrorAction SilentlyContinue
+
 & $python -m pip install --upgrade pyinstaller
 & $python -m PyInstaller --noconfirm --clean iOSRealRun.spec
 
