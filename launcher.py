@@ -6,6 +6,7 @@ import tempfile
 import threading
 import time
 import ctypes
+import multiprocessing
 from ctypes import wintypes
 import tkinter as tk
 from pathlib import Path
@@ -13,36 +14,36 @@ from tkinter import messagebox, scrolledtext, ttk
 
 
 BASE_DIR = Path(__file__).resolve().parent
+APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else BASE_DIR
 STOP_FILE_ENV = "IOSREALRUN_STOP_FILE"
 STOP_FLAG = Path(tempfile.gettempdir()) / "ios-realrun-stop.flag"
+LOG_FILE = Path(tempfile.gettempdir()) / "ios-realrun-gui.log"
 
-ERROR_ALREADY_EXISTS = 183
+WINDOW_TITLE = "iOS RealRun · Device Console"
+SW_RESTORE = 9
 
 if sys.platform == "win32":
-    _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    _kernel32.CreateMutexW.restype = wintypes.HANDLE
-    _kernel32.CreateMutexW.argtypes = (wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR)
+    _user32 = ctypes.WinDLL("user32", use_last_error=True)
+    _user32.FindWindowW.restype = wintypes.HWND
+    _user32.FindWindowW.argtypes = (wintypes.LPCWSTR, wintypes.LPCWSTR)
+    _user32.ShowWindow.argtypes = (wintypes.HWND, ctypes.c_int)
+    _user32.SetForegroundWindow.argtypes = (wintypes.HWND,)
 else:
-    _kernel32 = None
+    _user32 = None
 
-_gui_mutex = None
+def activate_existing_instance() -> bool:
+    """Bring an existing iOS RealRun window to the front.
 
-
-def acquire_gui_instance() -> bool:
-    global _gui_mutex
-    if _kernel32 is None:
-        return True
-    _gui_mutex = _kernel32.CreateMutexW(None, False, "Local\\iOSRealRunGui")
-    if not _gui_mutex:
-        return True
-    return ctypes.get_last_error() != ERROR_ALREADY_EXISTS
-
-
-def show_already_running() -> None:
-    if sys.platform == "win32":
-        ctypes.windll.user32.MessageBoxW(None, "iOS RealRun 已经在运行中。", "iOS RealRun", 0x40)
-    else:
-        print("iOS RealRun 已经在运行中。")
+    Returns True when a window already exists, in which case this process should exit.
+    """
+    if _user32 is None:
+        return False
+    hwnd = _user32.FindWindowW(None, WINDOW_TITLE)
+    if not hwnd:
+        return False
+    _user32.ShowWindow(hwnd, SW_RESTORE)
+    _user32.SetForegroundWindow(hwnd)
+    return True
 
 
 def request_stop() -> None:
@@ -62,7 +63,7 @@ def clear_stop_flag() -> None:
 class RunnerApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("iOS RealRun · Device Console")
+        self.root.title(WINDOW_TITLE)
         self.root.geometry("760x600")
         self.root.minsize(680, 520)
         self.root.configure(bg="#11161d")
@@ -140,7 +141,7 @@ class RunnerApp:
 
     def worker_command(self, *args):
         if getattr(sys, "frozen", False):
-            worker = BASE_DIR / "iOSRealRun-worker.exe"
+            worker = APP_DIR / "iOSRealRun-worker.exe"
             if worker.exists():
                 return [str(worker), *args]
             return [sys.executable, "--worker", *args]
@@ -149,6 +150,11 @@ class RunnerApp:
     def write_log(self, text):
         self.log.insert("end", text.rstrip() + "\n")
         self.log.see("end")
+        try:
+            with LOG_FILE.open("a", encoding="utf-8") as handle:
+                handle.write(f"[{time.strftime('%H:%M:%S')}] {text.rstrip()}\n")
+        except OSError:
+            pass
 
     def execute(self, args, action=False):
         target = self.action_process if action else self.process
@@ -157,7 +163,7 @@ class RunnerApp:
         environment = os.environ.copy()
         environment["PYTHONIOENCODING"] = "utf-8"
         environment[STOP_FILE_ENV] = str(STOP_FLAG)
-        process = subprocess.Popen(self.worker_command(*args), cwd=BASE_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", env=environment, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
+        process = subprocess.Popen(self.worker_command(*args), cwd=APP_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", env=environment, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
         if action:
             self.action_process = process
         else:
@@ -248,14 +254,14 @@ class RunnerApp:
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     if "--worker" in sys.argv:
         sys.argv = [sys.argv[0], *sys.argv[sys.argv.index("--worker") + 1:]]
         import worker
 
         worker.main()
         raise SystemExit
-    if not acquire_gui_instance():
-        show_already_running()
+    if activate_existing_instance():
         raise SystemExit
     app_root = tk.Tk()
     RunnerApp(app_root)

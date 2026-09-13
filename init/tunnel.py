@@ -10,10 +10,12 @@ RSD_PATTERN = re.compile(r"(?:--rsd\s+)?(\S+)\s+(\d+)$")
 
 
 def start_tunnel(queue):
+    logging.info("tunnel worker starting")
     if getattr(sys, "frozen", False):
         command = [sys.executable, "--tunnel"]
     else:
         command = [sys.executable, "-m", "pymobiledevice3", "lockdown", "start-tunnel", "--script-mode"]
+    logging.info("tunnel command: %s", " ".join(command))
 
     process = subprocess.Popen(
         command,
@@ -82,7 +84,10 @@ def tunnel():
         
         return process, address, port
     except Exception as e:
-        logging.error(f"❌ 隧道建立失败: {e}。请确认管理员权限、iTunes 驱动和设备开发者模式。")
+        logging.error(
+            f"隧道建立失败: {e}。child_alive={process.is_alive()} exitcode={process.exitcode}。"
+            "请确认管理员权限、iTunes 驱动和设备开发者模式。"
+        )
         terminate_tunnel(process)
 
     return None, None, None
