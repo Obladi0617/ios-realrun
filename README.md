@@ -232,6 +232,39 @@ async with DvtProvider(rsd) as dvt:
 **定位没恢复**
 → 重启手机即可恢复真实定位。
 
+**换电脑后无法挂载开发者镜像**
+
+首次挂载时需要联网从 GitHub 下载个性化镜像（约 15 MB），下载后会缓存到本机：
+
+```text
+%USERPROFILE%\.pymobiledevice3\Xcode_iOS_DDI_Personalized\
+├── Image.dmg
+├── Image.trustcache
+└── BuildManifest.plist
+```
+
+在一台电脑上成功挂载后，换到新电脑会重新下载；如果新电脑访问 GitHub 受限，就会挂载失败。
+
+**解决办法（任选其一）：**
+
+1. **复制缓存（推荐，可离线）**
+   把已成功电脑上的整个目录复制到新电脑相同位置：
+
+   ```text
+   源：C:\Users\<用户名>\.pymobiledevice3\Xcode_iOS_DDI_Personalized
+   目标：C:\Users\<新电脑用户名>\.pymobiledevice3\Xcode_iOS_DDI_Personalized
+   ```
+
+   注意：目录要放在**实际运行程序的那个用户**的家目录下（程序以管理员运行时通常是同一个用户）。
+
+2. **确保联网**
+   新电脑需要能访问 `api.github.com` 与 Apple 的 `gs.apple.com`（用于获取个性化授权票据）。
+
+3. **确认前置条件**
+   - 以管理员权限运行（UAC 点"是"）
+   - 已安装 iTunes（Apple Mobile Device 服务）
+   - 设备已解锁并信任此电脑，且已开启开发者模式
+
 ## 致谢
 
 - [iOSRealRun](https://github.com/iOSRealRun/iOSRealRun-cli-17) - 原项目
