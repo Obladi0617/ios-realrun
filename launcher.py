@@ -1,28 +1,62 @@
 import os
 import queue
-import signal
 import subprocess
 import sys
+import tempfile
 import threading
+import time
 import ctypes
+from ctypes import wintypes
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, scrolledtext, ttk
 
 
 BASE_DIR = Path(__file__).resolve().parent
+STOP_FILE_ENV = "IOSREALRUN_STOP_FILE"
+STOP_FLAG = Path(tempfile.gettempdir()) / "ios-realrun-stop.flag"
+
+ERROR_ALREADY_EXISTS = 183
+
+if sys.platform == "win32":
+    _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _kernel32.CreateMutexW.restype = wintypes.HANDLE
+    _kernel32.CreateMutexW.argtypes = (wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR)
+else:
+    _kernel32 = None
+
+_gui_mutex = None
 
 
-def acquire_gui_instance():
-    if sys.platform != "win32":
+def acquire_gui_instance() -> bool:
+    global _gui_mutex
+    if _kernel32 is None:
         return True
-    mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "Global\\iOSRealRunGui")
-    if not mutex:
+    _gui_mutex = _kernel32.CreateMutexW(None, False, "Local\\iOSRealRunGui")
+    if not _gui_mutex:
         return True
-    if ctypes.windll.kernel32.GetLastError() == 183:
-        messagebox.showinfo("iOS RealRun", "iOS RealRun 已经在运行中。")
-        return False
-    return True
+    return ctypes.get_last_error() != ERROR_ALREADY_EXISTS
+
+
+def show_already_running() -> None:
+    if sys.platform == "win32":
+        ctypes.windll.user32.MessageBoxW(None, "iOS RealRun 已经在运行中。", "iOS RealRun", 0x40)
+    else:
+        print("iOS RealRun 已经在运行中。")
+
+
+def request_stop() -> None:
+    try:
+        STOP_FLAG.write_text("stop", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def clear_stop_flag() -> None:
+    try:
+        STOP_FLAG.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 class RunnerApp:
@@ -122,6 +156,7 @@ class RunnerApp:
             return
         environment = os.environ.copy()
         environment["PYTHONIOENCODING"] = "utf-8"
+        environment[STOP_FILE_ENV] = str(STOP_FLAG)
         process = subprocess.Popen(self.worker_command(*args), cwd=BASE_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", env=environment, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
         if action:
             self.action_process = process
@@ -171,26 +206,44 @@ class RunnerApp:
         except ValueError:
             messagebox.showerror("配置错误", "速度必须大于 0，时长必须是非负整数。")
             return
+        clear_stop_flag()
         self.status.set("模拟运行中")
         self.start_button.configure(state="disabled")
         self.stop_button.configure(state="normal")
         self.write_log(f"开始模拟：{self.route.get()} / {speed:g} m/s / {minutes} 分钟")
         self.execute(("--run", "--route", self.route.get(), "--speed", str(speed), "--minutes", str(minutes)))
 
-    def stop_run(self):
+    @staticmethod
+    def force_kill(pid: int) -> None:
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        except OSError:
+            pass
+
+    def stop_run(self, wait_seconds: float = 25.0) -> None:
+        """Ask the worker to stop gracefully so the real GPS location is restored."""
         if not self.process or self.process.poll() is not None:
             return
-        self.write_log("正在停止模拟...")
-        try:
-            self.process.send_signal(signal.CTRL_BREAK_EVENT)
-        except (AttributeError, OSError):
-            self.process.terminate()
+        self.write_log("正在停止模拟并恢复真实定位...")
+        request_stop()
+        deadline = time.monotonic() + wait_seconds
+        while time.monotonic() < deadline and self.process.poll() is None:
+            time.sleep(0.2)
+        if self.process.poll() is None:
+            self.write_log("模拟未在超时内退出，强制结束进程。")
+            self.force_kill(self.process.pid)
 
     def close(self):
         if self.process and self.process.poll() is None:
-            if not messagebox.askyesno("确认退出", "模拟仍在运行，确定要退出吗？"):
+            if not messagebox.askyesno("确认退出", "模拟仍在运行，退出前会先恢复真实定位。确定退出吗？"):
                 return
             self.stop_run()
+        clear_stop_flag()
         self.root.destroy()
 
 
@@ -202,6 +255,7 @@ if __name__ == "__main__":
         worker.main()
         raise SystemExit
     if not acquire_gui_instance():
+        show_already_running()
         raise SystemExit
     app_root = tk.Tk()
     RunnerApp(app_root)

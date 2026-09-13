@@ -5,15 +5,31 @@ automatically run the route
 
 """修正坐标误差，百度取点使用 BD-09 坐标系，iOS使用 WGS-09 坐标系，进行转换"""
 import math
+import os
 import time
 import random
 import asyncio
+from pathlib import Path
 
 from geopy.distance import geodesic
 
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
 from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
+
+
+STOP_FILE_ENV = "IOSREALRUN_STOP_FILE"
+
+
+class RunStopped(Exception):
+    """Raised when an external graceful-stop request is received."""
+
+
+def stop_requested() -> bool:
+    path = os.environ.get(STOP_FILE_ENV)
+    if not path:
+        return False
+    return Path(path).exists()
 
 
 def bd09Towgs84(position):
@@ -140,6 +156,8 @@ async def run1(loc_sim, loc: list, v, dt=0.2):
     n = nList[random.randint(0, len(nList)-1)]
     fixedLoc = randLoc(fixedLoc, n=n)  # a path will be divided into n parts for random route
     for i in fixedLoc:
+        if stop_requested():
+            raise RunStopped()
         wgs = bd09Towgs84(i)
         await loc_sim.set(wgs["lat"], wgs["lng"])
         await asyncio.sleep(dt)
@@ -152,13 +170,22 @@ async def run(address, port, loc: list, v, d=15, duration_seconds=None):
 
     async with DvtProvider(rsd) as dvt:
         async with LocationSimulation(dvt) as loc_sim:
-            async def _loop():
-                while True:
-                    vRand = 1000 / (1000 / v - (2 * random.random() - 1) * d)
-                    await run1(loc_sim, loc, vRand)
-                    print("跑完一圈了")
+            try:
+                async def _loop():
+                    while True:
+                        vRand = 1000 / (1000 / v - (2 * random.random() - 1) * d)
+                        await run1(loc_sim, loc, vRand)
+                        print("跑完一圈了", flush=True)
 
-            if duration_seconds:
-                await asyncio.wait_for(_loop(), timeout=duration_seconds)
-            else:
-                await _loop()
+                if duration_seconds:
+                    await asyncio.wait_for(_loop(), timeout=duration_seconds)
+                else:
+                    await _loop()
+            except RunStopped:
+                print("收到停止请求，正在恢复真实定位...", flush=True)
+            finally:
+                try:
+                    await loc_sim.clear()
+                    print("已恢复真实定位", flush=True)
+                except Exception as error:  # noqa: BLE001
+                    print(f"清除模拟定位失败：{error}", flush=True)
