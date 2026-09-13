@@ -21,6 +21,7 @@ LOG_FILE = Path(tempfile.gettempdir()) / "ios-realrun-gui.log"
 
 WINDOW_TITLE = "iOS RealRun · Device Console"
 SW_RESTORE = 9
+ERROR_ALREADY_EXISTS = 183
 
 if sys.platform == "win32":
     _user32 = ctypes.WinDLL("user32", use_last_error=True)
@@ -28,8 +29,25 @@ if sys.platform == "win32":
     _user32.FindWindowW.argtypes = (wintypes.LPCWSTR, wintypes.LPCWSTR)
     _user32.ShowWindow.argtypes = (wintypes.HWND, ctypes.c_int)
     _user32.SetForegroundWindow.argtypes = (wintypes.HWND,)
+    _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _kernel32.CreateMutexW.restype = wintypes.HANDLE
+    _kernel32.CreateMutexW.argtypes = (wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR)
 else:
     _user32 = None
+    _kernel32 = None
+
+_gui_mutex = None
+
+
+def acquire_gui_instance() -> bool:
+    """Return False when another instance already owns the single-instance lock."""
+    global _gui_mutex
+    if _kernel32 is None:
+        return True
+    _gui_mutex = _kernel32.CreateMutexW(None, False, "Local\\iOSRealRunGui")
+    if not _gui_mutex:
+        return True
+    return ctypes.get_last_error() != ERROR_ALREADY_EXISTS
 
 def activate_existing_instance() -> bool:
     """Bring an existing iOS RealRun window to the front.
@@ -163,7 +181,8 @@ class RunnerApp:
         environment = os.environ.copy()
         environment["PYTHONIOENCODING"] = "utf-8"
         environment[STOP_FILE_ENV] = str(STOP_FLAG)
-        process = subprocess.Popen(self.worker_command(*args), cwd=APP_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", env=environment, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
+        flags = subprocess.CREATE_NEW_PROCESS_GROUP | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        process = subprocess.Popen(self.worker_command(*args), cwd=APP_DIR, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", env=environment, creationflags=flags)
         if action:
             self.action_process = process
         else:
@@ -262,6 +281,9 @@ if __name__ == "__main__":
         worker.main()
         raise SystemExit
     if activate_existing_instance():
+        raise SystemExit
+    if not acquire_gui_instance():
+        activate_existing_instance()
         raise SystemExit
     app_root = tk.Tk()
     RunnerApp(app_root)
