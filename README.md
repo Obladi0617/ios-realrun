@@ -6,6 +6,39 @@
 
 ---
 
+## 下载与安装（推荐）
+
+**[⬇️ 下载 iOS-RealRun-Setup.exe](https://github.com/Obladi0617/ios-realrun/releases/latest/download/iOS-RealRun-Setup.exe)** · [查看所有版本](https://github.com/Obladi0617/ios-realrun/releases)
+
+下载后双击安装，**无需安装 Python**。安装完成后双击桌面 **iOS RealRun** 即可启动。
+
+### 使用要求
+
+| 项目       | 说明                                                                 |
+| ---------- | -------------------------------------------------------------------- |
+| 系统       | Windows 10/11 64 位                                                  |
+| iTunes     | 必须安装，用于提供 Apple 设备驱动                                    |
+| 开发者模式 | 设备上开启一次即可长期生效（设置 → 隐私与安全性 → 开发者模式）       |
+| 数据线     | 连接后设备需解锁并点击“信任此电脑”                                   |
+| 亮屏       | 运行期间设备需保持解锁亮屏，建议把自动锁定设为“永不”                 |
+| 管理员权限 | 每次启动会弹 UAC，点“是”即可（创建虚拟网卡需要管理员权限）           |
+| 设备数量   | 同时只连接一台 iOS 设备                                              |
+
+### 使用步骤
+
+1. 双击桌面 **iOS RealRun**，在 UAC 弹窗点“是”
+2. 用数据线连接设备，解锁并点击“信任此电脑”
+3. 点击 **检查设备** 确认连接正常
+4. 选择路线、速度、运行时长
+5. 点击 **开始模拟**（程序会自动挂载开发者镜像并建立隧道）
+6. 结束后点击 **停止** 或直接关闭窗口，程序会自动恢复真实定位
+
+> 关闭应用会自动清除模拟定位并恢复真实 GPS。若异常退出未恢复，重启设备即可。
+>
+> 运行日志位于 `%TEMP%\ios-realrun-gui.log`，反馈问题时可直接提供该文件。
+
+---
+
 ## 原理
 
 1. 通过 `pymobiledevice3` 与 iOS 设备建立 USB 远程调试连接
@@ -173,7 +206,10 @@ async with DvtProvider(rsd) as dvt:
 
 项目提供一个名为 **iOS RealRun** 的 Windows 启动器，支持设备检查、自动挂载开发者镜像、路线/速度/时长配置以及运行日志。
 
-### 构建安装包
+- 下载安装：[Releases 页面](https://github.com/Obladi0617/ios-realrun/releases/latest)（`iOS-RealRun-Setup.exe`）
+- 使用说明：见上方 [下载与安装](#下载与安装推荐)
+
+### 从源码构建安装包
 
 在已准备好 `venv` 的项目目录中，以 PowerShell 执行：
 
@@ -182,10 +218,6 @@ async with DvtProvider(rsd) as dvt:
 ```
 
 脚本会生成 `dist\installer\iOS-RealRun-Setup.exe`。安装后从桌面 **iOS RealRun** 快捷方式启动，首次运行请在 UAC 提示中允许管理员权限。
-
-### 使用顺序
-
-解锁设备并点击“信任此电脑” → 选择路线和参数 → 点击“开始模拟”。程序会自动检查设备并挂载开发者镜像。
 
 ---
 
