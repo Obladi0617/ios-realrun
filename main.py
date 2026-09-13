@@ -57,6 +57,8 @@ async def main():
     original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
     process, address, port = tunnel.tunnel()
     signal.signal(signal.SIGINT, original_sigint_handler)
+    if process is None or not address or not port:
+        raise RuntimeError("无法建立 iOS 隧道。请以管理员权限运行，并确认 iTunes/Apple Mobile Device 服务正常。")
     try:
         logger.debug(f"tunnel address: {address}, port: {port}")
 
@@ -83,15 +85,15 @@ async def main():
         except Exception:
             logger.debug("unexpected error", exc_info=True)
         finally:
-            logger.debug(f"Is process alive? {process.is_alive()}")
+            logger.debug(f"Is process alive? {process.is_alive() if process else False}")
             logger.debug("Start to clear location")
 
     except KeyboardInterrupt:
         logger.debug("get KeyboardInterrupt (outer)")
     finally:
-        logger.debug(f"Is process alive? {process.is_alive()}")
+        logger.debug(f"Is process alive? {process.is_alive() if process else False}")
         logger.debug("terminating tunnel process")
-        process.terminate()
+        tunnel.terminate_tunnel(process)
         logger.info("tunnel process terminated")
         print("Bye")
 

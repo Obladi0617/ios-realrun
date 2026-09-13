@@ -120,7 +120,9 @@ class RunnerApp:
         target = self.action_process if action else self.process
         if target and target.poll() is None:
             return
-        process = subprocess.Popen(self.worker_command(*args), cwd=BASE_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
+        environment = os.environ.copy()
+        environment["PYTHONIOENCODING"] = "utf-8"
+        process = subprocess.Popen(self.worker_command(*args), cwd=BASE_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", env=environment, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
         if action:
             self.action_process = process
         else:

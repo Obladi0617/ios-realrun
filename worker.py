@@ -1,22 +1,24 @@
 import argparse
 import asyncio
+import multiprocessing
 import sys
+import time
 from pathlib import Path
 
 
 async def check_device():
-    from pymobiledevice3.lockdown import create_using_usbmux
+    from driver.connect import get_usbmux_lockdownclient
 
-    device = await create_using_usbmux()
+    device = await get_usbmux_lockdownclient()
     print(f"设备已连接：iOS {device.all_values.get('ProductVersion')} / {device.all_values.get('BuildVersion')}", flush=True)
 
 
 async def mount_image():
-    from pymobiledevice3.lockdown import create_using_usbmux
+    from driver.connect import get_usbmux_lockdownclient
     from pymobiledevice3.exceptions import AlreadyMountedError
     from pymobiledevice3.services.mobile_image_mounter import auto_mount
 
-    device = await create_using_usbmux()
+    device = await get_usbmux_lockdownclient()
     try:
         await auto_mount(device)
     except AlreadyMountedError:
@@ -32,6 +34,7 @@ def run_main(args):
     config.config.v = args.speed
     print("正在准备设备和开发者镜像...", flush=True)
     asyncio.run(mount_image())
+    time.sleep(3)
     import main
 
     sys.argv = ["main.py"]
@@ -41,7 +44,14 @@ def run_main(args):
 
 
 def main():
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
     parser = argparse.ArgumentParser()
+    parser.add_argument("--tunnel", action="store_true")
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--mount", action="store_true")
     parser.add_argument("--run", action="store_true")
@@ -49,15 +59,28 @@ def main():
     parser.add_argument("--speed", type=float, default=4.8)
     parser.add_argument("--minutes", type=int, default=30)
     args = parser.parse_args()
-    if args.check:
-        asyncio.run(check_device())
-    elif args.mount:
-        asyncio.run(mount_image())
-    elif args.run:
-        run_main(args)
-    else:
-        parser.error("需要指定 --check、--mount 或 --run")
+    try:
+        if args.tunnel:
+            import pymobiledevice3.__main__
+
+            sys.argv = ["pymobiledevice3", "lockdown", "start-tunnel", "--script-mode"]
+            pymobiledevice3.__main__.main()
+        elif args.check:
+            asyncio.run(check_device())
+        elif args.mount:
+            asyncio.run(mount_image())
+        elif args.run:
+            run_main(args)
+        else:
+            parser.error("需要指定 --check、--mount 或 --run")
+    except KeyboardInterrupt:
+        print("操作已取消", flush=True)
+        raise SystemExit(130)
+    except Exception as error:
+        print(f"错误：{error}", flush=True)
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     main()

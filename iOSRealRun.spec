@@ -1,4 +1,6 @@
+import importlib.metadata
 from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_all, copy_metadata
 
 
@@ -6,13 +8,23 @@ root = Path(SPECPATH)
 datas = [(str(root / name), ".") for name in ("config.yaml", "ZJGroute.txt", "YQroute.txt", "HNroute.txt")]
 hiddenimports = []
 binaries = []
-for package in ("pymobiledevice3", "developer_disk_image", "geopy"):
+for package in ("pymobiledevice3", "developer_disk_image", "geopy", "pytun_pmd3"):
     package_datas, package_binaries, package_hiddenimports = collect_all(package)
     datas.extend(package_datas)
     binaries.extend(package_binaries)
     hiddenimports.extend(package_hiddenimports)
 
-datas.extend(copy_metadata("pyimg4"))
+metadata_datas = []
+for distribution in importlib.metadata.distributions():
+    name = distribution.metadata["Name"]
+    if not name:
+        continue
+    try:
+        metadata_datas.extend(copy_metadata(name))
+    except Exception:
+        pass
+
+datas.extend(metadata_datas)
 
 
 launcher_analysis = Analysis([str(root / "launcher.py")], pathex=[str(root)], datas=datas, binaries=binaries, hiddenimports=hiddenimports, noarchive=False)
