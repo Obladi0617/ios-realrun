@@ -35,7 +35,7 @@ logging.getLogger('urllib3.connectionpool').setLevel(logging.DEBUG if debug else
 async def main():
     parser = argparse.ArgumentParser(description="iOS RealRun virtual location runner")
     parser.add_argument("-m", "--minutes", type=int, default=0,
-                        help="运行时长（分钟），不指定则无限运行")
+                        help="最长运行时长（分钟），默认达到约4公里后停止")
     args = parser.parse_args()
 
     logger = logging.getLogger(__name__)
@@ -67,16 +67,18 @@ async def main():
 
         try:
             duration = args.minutes * 60 if args.minutes > 0 else None
+            variation = getattr(config.config, "speedVariation", {}) or {}
+            target_distance = float(variation.get("targetDistance", 4000.0))
 
             if duration:
                 print(f"已开始模拟跑步，速度大约为 {config.config.v} m/s")
-                print(f"将在 {args.minutes} 分钟后自动停止")
+                print(f"目标约 {target_distance / 1000:.1f} 公里，{args.minutes} 分钟后也会自动停止")
             else:
                 print(f"已开始模拟跑步，速度大约为 {config.config.v} m/s")
-                print("会无限循环，按 Ctrl+C 退出")
+                print("达到目标里程后自动停止，也可按 Ctrl+C 提前退出")
             print("请勿直接关闭窗口，否则无法还原正常定位")
 
-            await run.run(address, port, loc, config.config.v, duration_seconds=duration)
+            await run.run(address, port, loc, config.config.v, duration_seconds=duration, variation=variation)
         except KeyboardInterrupt:
             logger.debug("get KeyboardInterrupt (inner)")
         except asyncio.TimeoutError:

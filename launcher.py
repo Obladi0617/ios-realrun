@@ -23,6 +23,12 @@ WINDOW_TITLE = "iOS RealRun · Device Console"
 SW_RESTORE = 9
 ERROR_ALREADY_EXISTS = 183
 
+VARIATION_PROFILES = {
+    "平稳": "steady",
+    "业余跑者": "recreational",
+    "波动较大": "variable",
+}
+
 if sys.platform == "win32":
     _user32 = ctypes.WinDLL("user32", use_last_error=True)
     _user32.FindWindowW.restype = wintypes.HWND
@@ -132,6 +138,10 @@ class RunnerApp:
         self.duration = tk.StringVar(value="30")
         ttk.Combobox(panel, textvariable=self.duration, values=("10", "20", "30", "45", "60", "0"), state="readonly").grid(row=2, column=1, sticky="ew", pady=7)
         ttk.Label(panel, text="分钟，0 表示手动停止", style="Panel.TLabel").grid(row=2, column=2, sticky="w", padx=(12, 0), pady=7)
+        ttk.Label(panel, text="配速波动", style="Panel.TLabel").grid(row=3, column=0, sticky="w", padx=(0, 16), pady=7)
+        self.profile = tk.StringVar(value="业余跑者")
+        ttk.Combobox(panel, textvariable=self.profile, values=tuple(VARIATION_PROFILES), state="readonly").grid(row=3, column=1, sticky="ew", pady=7)
+        ttk.Label(panel, text="模拟真人速度起伏", style="Panel.TLabel").grid(row=3, column=2, sticky="w", padx=(12, 0), pady=7)
 
         actions = ttk.Frame(self.root)
         actions.pack(fill="x", padx=28, pady=(8, 4))
@@ -232,11 +242,12 @@ class RunnerApp:
             messagebox.showerror("配置错误", "速度必须大于 0，时长必须是非负整数。")
             return
         clear_stop_flag()
+        profile = VARIATION_PROFILES.get(self.profile.get(), "recreational")
         self.status.set("模拟运行中")
         self.start_button.configure(state="disabled")
         self.stop_button.configure(state="normal")
-        self.write_log(f"开始模拟：{self.route.get()} / {speed:g} m/s / {minutes} 分钟")
-        self.execute(("--run", "--route", self.route.get(), "--speed", str(speed), "--minutes", str(minutes)))
+        self.write_log(f"开始模拟：{self.route.get()} / {speed:g} m/s / {minutes} 分钟 / 波动 {self.profile.get()}")
+        self.execute(("--run", "--route", self.route.get(), "--speed", str(speed), "--minutes", str(minutes), "--profile", profile))
 
     @staticmethod
     def force_kill(pid: int) -> None:

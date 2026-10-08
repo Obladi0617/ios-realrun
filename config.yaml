@@ -2,3 +2,13 @@ v: 4.8
 routeConfig: "ZJGroute.txt"
 libimobiledeviceDir: "libimobiledevice"
 imageDir: "DeveloperDiskImage"
+
+# 速度波动（模拟真人配速起伏），全部按目标速度的百分比计算，任意配速下表现一致
+# profile: steady（平稳定速）/ recreational（业余跑者，默认）/ variable（波动较大）
+speedVariation:
+  profile: "recreational"
+  cvPercent: 6.0          # 速度变异系数（%）：马拉松 5km 分段实测约 7%
+  correlationTime: 20.0   # 速度漂移的相关时间（秒）
+  fatiguePercent: 3.0     # 全程疲劳减速幅度（%）
+  lapPercent: 2.5         # 每圈整体快慢偏移（%）
+  targetDistance: 4000.0  # 目标总里程（米）

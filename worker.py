@@ -27,11 +27,27 @@ async def mount_image():
         print("开发者镜像挂载成功", flush=True)
 
 
+async def start_tunnel():
+    from pymobiledevice3.remote.common import TunnelProtocol
+    from pymobiledevice3.remote.tunnel_service import get_core_device_tunnel_services, start_tunnel as open_tunnel
+
+    services = await get_core_device_tunnel_services()
+    if not services:
+        raise RuntimeError("未检测到可用的 iOS 隧道服务")
+    async with open_tunnel(services[0], protocol=TunnelProtocol.TCP) as tunnel_result:
+        print(f"{tunnel_result.address} {tunnel_result.port}", flush=True)
+        await tunnel_result.client.wait_closed()
+
+
 def run_main(args):
     import config
 
     config.config.routeConfig = str((Path(__file__).resolve().parent / args.route).resolve())
     config.config.v = args.speed
+    if args.profile:
+        variation = dict(getattr(config.config, "speedVariation", None) or {})
+        variation["profile"] = args.profile
+        config.config.speedVariation = variation
     print("正在准备设备和开发者镜像...", flush=True)
     asyncio.run(mount_image())
     time.sleep(3)
@@ -57,14 +73,12 @@ def main():
     parser.add_argument("--run", action="store_true")
     parser.add_argument("--route", default="ZJGroute.txt")
     parser.add_argument("--speed", type=float, default=4.8)
+    parser.add_argument("--profile", default=None)
     parser.add_argument("--minutes", type=int, default=30)
     args = parser.parse_args()
     try:
         if args.tunnel:
-            import pymobiledevice3.__main__
-
-            sys.argv = ["pymobiledevice3", "lockdown", "start-tunnel", "--script-mode"]
-            pymobiledevice3.__main__.main()
+            asyncio.run(start_tunnel())
         elif args.check:
             asyncio.run(check_device())
         elif args.mount:
