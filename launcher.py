@@ -1,5 +1,6 @@
 import os
 import queue
+import re
 import subprocess
 import sys
 import tempfile
@@ -28,6 +29,13 @@ VARIATION_PROFILES = {
     "业余跑者": "recreational",
     "波动较大": "variable",
 }
+
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+LOGGER_PREFIX = re.compile(
+    r"^(?:\d{4}-\d{2}-\d{2}[^-]*-\s*)?"
+    r"(?:BookOfSaturday\s+)?(?:[\w.]+\[\d+\]\s+)?"
+    r"(?:INFO|WARNING|ERROR|DEBUG)\s*-\s*"
+)
 
 if sys.platform == "win32":
     _user32 = ctypes.WinDLL("user32", use_last_error=True)
@@ -88,8 +96,8 @@ class RunnerApp:
     def __init__(self, root):
         self.root = root
         self.root.title(WINDOW_TITLE)
-        self.root.geometry("760x600")
-        self.root.minsize(680, 520)
+        self.root.geometry("820x650")
+        self.root.minsize(720, 560)
         self.root.configure(bg="#11161d")
         self.output_queue = queue.Queue()
         self.process = None
@@ -122,7 +130,7 @@ class RunnerApp:
         header = ttk.Frame(self.root)
         header.pack(fill="x", padx=28, pady=(24, 12))
         ttk.Label(header, text="iOS RealRun", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(header, text="iOS 26 虚拟定位控制台  /  DEVICE RUNNER", style="Muted.TLabel").pack(anchor="w", pady=(3, 0))
+        ttk.Label(header, text="真实路线 · 设备状态 · 配速模拟", style="Muted.TLabel").pack(anchor="w", pady=(3, 0))
 
         panel = ttk.Frame(self.root, style="Panel.TFrame", padding=20)
         panel.pack(fill="x", padx=28, pady=8)
@@ -162,7 +170,10 @@ class RunnerApp:
 
         log_frame = ttk.Frame(self.root)
         log_frame.pack(fill="both", expand=True, padx=28, pady=(8, 24))
-        ttk.Label(log_frame, text="运行日志", style="Muted.TLabel").pack(anchor="w", pady=(0, 6))
+        log_header = ttk.Frame(log_frame)
+        log_header.pack(fill="x", pady=(0, 6))
+        ttk.Label(log_header, text="运行日志", style="Muted.TLabel").pack(side="left")
+        ttk.Button(log_header, text="清空", command=self.clear_log).pack(side="right")
         self.log = scrolledtext.ScrolledText(log_frame, height=12, bg="#0c1117", fg="#b8c7d3", insertbackground="#f2b84b", relief="flat", borderwidth=0, font=("Cascadia Mono", 9), padx=12, pady=10)
         self.log.pack(fill="both", expand=True)
         self.write_log("控制台已就绪。请解锁设备并点击“检查设备”。")
@@ -175,14 +186,56 @@ class RunnerApp:
             return [sys.executable, "--worker", *args]
         return [sys.executable, str(BASE_DIR / "worker.py"), *args]
 
+    @staticmethod
+    def format_log_line(text):
+        line = ANSI_ESCAPE.sub("", text).strip()
+        if not line:
+            return ""
+        line = LOGGER_PREFIX.sub("", line)
+        if "tunnel worker starting" in line:
+            return "正在启动设备隧道..."
+        if "tunnel command:" in line:
+            return "隧道组件已启动"
+        if "Tunnel started" in line:
+            return "隧道进程已启动"
+        if "tunnel created" in line:
+            return "设备隧道已建立"
+        if "RSD Address:" in line:
+            return "隧道地址：" + line.split("RSD Address:", 1)[1].strip()
+        if re.match(r"^[0-9a-f:]+\s+\d+$", line):
+            address, port = line.rsplit(maxsplit=1)
+            return f"隧道地址：{address}，端口：{port}"
+        if "init done" in line:
+            return "设备初始化完成"
+        if "trying to start tunnel" in line:
+            return "正在建立设备隧道..."
+        if "got route from" in line:
+            return "路线已加载：" + line.split("got route from", 1)[1].strip()
+        if "Your system version is" in line:
+            return "设备系统版本：" + line.split("Your system version is", 1)[1].strip()
+        if "DTX reader exiting" in line:
+            return "设备连接中断：" + line.split("DTX reader exiting", 1)[1].strip()
+        if "Channel is closed" in line or "connection is closed" in line:
+            return "设备连接已关闭，无法继续发送定位"
+        if line.startswith("[进程结束，退出码 "):
+            return line.replace("[进程结束，退出码 ", "任务结束，退出码 ").rstrip("]")
+        return line
+
     def write_log(self, text):
-        self.log.insert("end", text.rstrip() + "\n")
+        display_text = self.format_log_line(text)
+        if not display_text:
+            return
+        self.log.insert("end", display_text + "\n")
         self.log.see("end")
         try:
             with LOG_FILE.open("a", encoding="utf-8") as handle:
-                handle.write(f"[{time.strftime('%H:%M:%S')}] {text.rstrip()}\n")
+                handle.write(f"[{time.strftime('%H:%M:%S')}] {display_text}\n")
         except OSError:
             pass
+
+    def clear_log(self):
+        self.log.delete("1.0", "end")
+        self.write_log("日志已清空。")
 
     def execute(self, args, action=False):
         target = self.action_process if action else self.process

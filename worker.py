@@ -28,15 +28,10 @@ async def mount_image():
 
 
 async def start_tunnel():
-    from pymobiledevice3.remote.common import TunnelProtocol
-    from pymobiledevice3.remote.tunnel_service import get_core_device_tunnel_services, start_tunnel as open_tunnel
+    from pymobiledevice3.cli.lockdown import async_cli_start_tunnel
+    from pymobiledevice3.lockdown import create_using_usbmux
 
-    services = await get_core_device_tunnel_services()
-    if not services:
-        raise RuntimeError("未检测到可用的 iOS 隧道服务")
-    async with open_tunnel(services[0], protocol=TunnelProtocol.TCP) as tunnel_result:
-        print(f"{tunnel_result.address} {tunnel_result.port}", flush=True)
-        await tunnel_result.client.wait_closed()
+    await async_cli_start_tunnel(await create_using_usbmux(), script_mode=True)
 
 
 def run_main(args):

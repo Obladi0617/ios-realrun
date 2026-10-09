@@ -218,11 +218,11 @@ async with DvtProvider(rsd) as dvt:
 
 GUI 提供三种配速波动档位：
 
-| 档位 | 特点 |
-| ---- | ---- |
-| `steady` | 波动较小，适合模拟较稳定的跑者 |
-| `recreational` | 默认模式，适合普通跑者 |
-| `variable` | 波动更明显，适合模拟配速控制较弱的跑者 |
+| 档位           | 特点                                   |
+| -------------- | -------------------------------------- |
+| `steady`       | 波动较小，适合模拟较稳定的跑者         |
+| `recreational` | 默认模式，适合普通跑者                 |
+| `variable`     | 波动更明显，适合模拟配速控制较弱的跑者 |
 
 可在 `config.yaml` 中调整 `cvPercent`、`correlationTime`、`fatiguePercent`、`lapPercent` 和 `targetDistance`。
 

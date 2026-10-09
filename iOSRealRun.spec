@@ -14,6 +14,9 @@ for package in ("pymobiledevice3", "developer_disk_image", "geopy", "pytun_pmd3"
     binaries.extend(collect_dynamic_libs(package))
 
 hiddenimports.extend((
+    "pymobiledevice3.cli.lockdown",
+    "pymobiledevice3.cli.remote",
+    "pymobiledevice3.cli.cli_common",
     "pymobiledevice3.exceptions",
     "pymobiledevice3.lockdown",
     "pymobiledevice3.remote.remote_service_discovery",
