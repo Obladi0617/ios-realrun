@@ -16,13 +16,55 @@ async def check_device():
 async def mount_image():
     from driver.connect import get_usbmux_lockdownclient
     from pymobiledevice3.exceptions import AlreadyMountedError
-    from pymobiledevice3.services.mobile_image_mounter import auto_mount
+    from pymobiledevice3.exceptions import MessageNotSupportedError
+    from pymobiledevice3.services.mobile_image_mounter import (
+        MobileImageMounterService,
+        auto_mount,
+    )
 
     device = await get_usbmux_lockdownclient()
+
+    async def mounted_image_types():
+        async with MobileImageMounterService(device) as mounter:
+            try:
+                devices = await mounter.copy_devices()
+            except MessageNotSupportedError:
+                devices = []
+
+            mounted = [
+                "DeveloperDiskImage"
+                for entry in devices
+                if entry.get("IsMounted")
+                and entry.get("MountPath") == "/System/Developer"
+            ]
+            if mounted:
+                return mounted
+
+            mounted = []
+            for image_type in ("Developer", "Personalized"):
+                if await mounter.is_image_mounted(image_type):
+                    mounted.append(image_type)
+            return mounted
+
+    mounted = await mounted_image_types()
+    if mounted:
+        print(f"开发者镜像已挂载（{', '.join(mounted)}），继续运行", flush=True)
+        return
+
     try:
         await auto_mount(device)
     except AlreadyMountedError:
         print("开发者镜像已挂载，继续运行", flush=True)
+    except Exception:
+        # Mount can report a failure after the device has finished mounting.
+        # Only treat that as success when the device confirms a mounted image.
+        try:
+            mounted = await mounted_image_types()
+        except Exception:
+            mounted = []
+        if not mounted:
+            raise
+        print(f"开发者镜像已挂载（{', '.join(mounted)}），继续运行", flush=True)
     else:
         print("开发者镜像挂载成功", flush=True)
 
