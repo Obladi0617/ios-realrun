@@ -1,0 +1,56 @@
+name: Build Windows installer
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-windows.yml'
+      - 'requirements.txt'
+      - '**.py'
+      - '*.spec'
+      - 'installer.iss'
+      - 'build_windows.ps1'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: x64
+      - name: Prepare Python environment
+        shell: pwsh
+        run: |
+          python -m venv venv
+          & .\venv\Scripts\python.exe -m pip install -r requirements.txt "pymobiledevice3==11.49.1" pyinstaller
+          if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed" }
+          & .\venv\Scripts\python.exe -m pip check
+          if ($LASTEXITCODE -ne 0) { throw "Dependency check failed" }
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup installation failed" }
+      - name: Build installer
+        shell: pwsh
+        run: |
+          .\build_windows.ps1
+          if (!(Test-Path dist\installer\iOS-RealRun-Setup.exe)) { throw "Installer missing" }
+          if (!(Test-Path dist\iOSRealRun\iOSRealRun-worker.exe)) { throw "Worker missing" }
+          & .\dist\iOSRealRun\iOSRealRun-worker.exe --help
+          if ($LASTEXITCODE -ne 0) { throw "Packaged worker smoke test failed" }
+      - name: Record dependencies
+        shell: pwsh
+        run: |
+          & .\venv\Scripts\python.exe -m pip freeze | Out-File dist\installer\dependencies.txt
+          Get-FileHash dist\installer\iOS-RealRun-Setup.exe -Algorithm SHA256 | Format-List | Out-File dist\installer\SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: iOS-RealRun-Windows
+          path: dist/installer/*
+          if-no-files-found: error
+          retention-days: 30
