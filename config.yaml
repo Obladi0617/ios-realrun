@@ -1,4 +1,4 @@
-v: 4.8
+v: 3.3333  # 默认配速 5:00/km（约 12 km/h）
 routeConfig: "ZJGroute.txt"
 libimobiledeviceDir: "libimobiledevice"
 imageDir: "DeveloperDiskImage"

@@ -3,6 +3,10 @@ import multiprocessing
 import re
 import subprocess
 import sys
+import queue as queue_module
+import time
+
+from session_control import RunStopped, raise_if_stopped
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -79,12 +83,23 @@ def tunnel():
     process.start()
     
     try:
-        result = queue.get(timeout=40)
+        deadline = time.monotonic() + 40
+        while True:
+            raise_if_stopped()
+            try:
+                result = queue.get(timeout=0.2)
+                break
+            except queue_module.Empty:
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("隧道启动超时")
         if result is None:
             raise RuntimeError("❌ 无法建立隧道连接")
         address, port = result
         
         return process, address, port
+    except RunStopped:
+        terminate_tunnel(process)
+        raise
     except Exception as e:
         logging.error(
             f"隧道建立失败: {e}。child_alive={process.is_alive()} exitcode={process.exitcode}。"

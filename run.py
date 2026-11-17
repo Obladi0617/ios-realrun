@@ -5,31 +5,15 @@ automatically run the route
 
 """修正坐标误差，百度取点使用 BD-09 坐标系，iOS使用 WGS-09 坐标系，进行转换"""
 import math
-import os
 import time
 import random
 import asyncio
-from pathlib import Path
+from bisect import bisect_right
 
 from geopy.distance import geodesic
 
-from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
-from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
-from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
-
-
-STOP_FILE_ENV = "IOSREALRUN_STOP_FILE"
-
-
-class RunStopped(Exception):
-    """Raised when an external graceful-stop request is received."""
-
-
-def stop_requested() -> bool:
-    path = os.environ.get(STOP_FILE_ENV)
-    if not path:
-        return False
-    return Path(path).exists()
+from session_control import RunStopped, stop_requested
+from telemetry import TrackingLocation, distance_metres, emit
 
 
 DT = 0.2  # 定位推送间隔（秒）
@@ -43,6 +27,7 @@ DT = 0.2  # 定位推送间隔（秒）
 # * 水平越低波动越大，后程降速越明显；水平越高越平稳
 #   （Medicina 2026 综述、PLoS ONE 2026 波士顿马拉松 7.9 万人分析）
 SPEED_PROFILES = {
+    "constant":     {"cvPercent": 0.0,  "correlationTime": 25.0, "fatiguePercent": 0.0, "lapPercent": 0.0},
     "steady":       {"cvPercent": 3.0,  "correlationTime": 25.0, "fatiguePercent": 1.5, "lapPercent": 1.5},
     "recreational": {"cvPercent": 6.0,  "correlationTime": 20.0, "fatiguePercent": 3.0, "lapPercent": 2.5},
     "variable":     {"cvPercent": 10.0, "correlationTime": 15.0, "fatiguePercent": 5.0, "lapPercent": 4.0},
@@ -76,10 +61,6 @@ class PaceModel:
 
         # cvPercent 是期望的总变速系数，圈速偏移占掉一部分方差，其余交给相关噪声
         self.ou_sigma = math.sqrt(max(0.0, self.cv * self.cv - self.lap_sigma * self.lap_sigma))
-        decay = math.exp(-self.dt / self.tau)
-        self._decay = decay
-        self._noise = math.sqrt(max(0.0, 1.0 - decay * decay)) * self.ou_sigma
-
         self.offset = 0.0
         self.lap_offset = 0.0
         self.current_speed = self.base_speed
@@ -94,6 +75,8 @@ class PaceModel:
         self._sum = 0.0
         self._sum_sq = 0.0
         self._count = 0
+        self.constant = not any((self.cv, self.fatigue, self.lap_sigma))
+        self._weight = 0.0
 
     def start_lap(self) -> None:
         self.lap_offset = random.gauss(0.0, self.lap_sigma) if self.lap_sigma else 0.0
@@ -104,14 +87,19 @@ class PaceModel:
         factor = 1.0 + self.offset + self.lap_offset
         return max(self.min_speed, self.base_speed * factor * drift * self.turn_factor * self.event_factor)
 
-    def step(self, turn_factor=1.0) -> float:
-        self.offset = self.offset * self._decay + random.gauss(0.0, 1.0) * self._noise
-        self.elapsed += self.dt
-        self.turn_factor += (max(0.82, min(1.0, turn_factor)) - self.turn_factor) * min(1.0, self.dt / 0.8)
+    def step(self, turn_factor=1.0, dt=None) -> float:
+        dt = self.dt if dt is None else float(dt)
+        if not math.isfinite(dt) or dt <= 0:
+            raise ValueError("配速时间间隔必须为正数。")
+        decay = math.exp(-dt / self.tau)
+        noise = math.sqrt(max(0.0, 1.0 - decay * decay)) * self.ou_sigma
+        self.offset = self.offset * decay + random.gauss(0.0, 1.0) * noise
+        self.elapsed += dt
+        self.turn_factor += (max(0.82, min(1.0, turn_factor)) - self.turn_factor) * -math.expm1(-dt / 0.8)
 
-        self.next_event -= self.dt
+        self.next_event -= dt
         if self.event_remaining > 0.0:
-            self.event_remaining -= self.dt
+            self.event_remaining -= dt
             if self.event_remaining <= 0.0:
                 self.event_factor = 1.0
         elif self.next_event <= 0.0:
@@ -130,11 +118,12 @@ class PaceModel:
 
         target_speed = self.speed()
         response_tau = self.acceleration_tau if target_speed >= self.current_speed else self.deceleration_tau
-        self.current_speed += (target_speed - self.current_speed) * min(1.0, self.dt / response_tau)
-        speed = max(self.min_speed, self.current_speed)
-        self.distance += speed * self.dt
-        self._sum += speed
-        self._sum_sq += speed * speed
+        self.current_speed += (target_speed - self.current_speed) * -math.expm1(-dt / response_tau)
+        speed = self.base_speed if self.constant else max(self.min_speed, self.current_speed)
+        self.distance += speed * dt
+        self._sum += speed * dt
+        self._sum_sq += speed * speed * dt
+        self._weight += dt
         self._count += 1
         return speed
 
@@ -142,13 +131,13 @@ class PaceModel:
         return self.distance >= self.target_distance
 
     def mean_speed(self) -> float:
-        return self._sum / self._count if self._count else self.base_speed
+        return self._sum / self._weight if self._weight else self.base_speed
 
     def realized_cv(self) -> float:
         if self._count < 2:
             return 0.0
         mean = self.mean_speed()
-        variance = max(0.0, self._sum_sq / self._count - mean * mean)
+        variance = max(0.0, self._sum_sq / self._weight - mean * mean)
         return math.sqrt(variance) / mean * 100.0
 
     def describe(self) -> str:
@@ -288,54 +277,135 @@ def fixLockT(loc: list, v, dt):
             t += dt
     return fixedLoc
 
-async def run1(loc_sim, loc: list, model, dt=DT):
-    """跑一圈，由配速模型控制瞬时速度。"""
-    nominal = model.base_speed
-    fixedLoc = fixLockT(loc, nominal, dt)
-    nList = (5, 6, 7, 8, 9)
-    n = nList[random.randint(0, len(nList)-1)]
-    fixedLoc = randLoc(fixedLoc, n=n)  # a path will be divided into n parts for random route
+class MetricRoute:
+    """Interpolate by metres along WGS84 segments instead of rounded point counts."""
 
+    def __init__(self, points):
+        self.points = []
+        for point in points:
+            value = (point["lat"], point["lng"])
+            if not self.points or distance_metres(self.points[-1], value) > .001:
+                self.points.append(value)
+        if len(self.points) > 1 and distance_metres(self.points[0], self.points[-1]) < .001:
+            self.points.pop()
+        if len(self.points) < 2:
+            raise ValueError("路线至少需要两个不同的坐标点。")
+        self.points.append(self.points[0])
+        self.cumulative = [0.0]
+        for a, b in zip(self.points, self.points[1:]):
+            self.cumulative.append(self.cumulative[-1] + distance_metres(a, b))
+        self.length = self.cumulative[-1]
+
+    def sample(self, travelled):
+        travelled %= self.length
+        index = min(bisect_right(self.cumulative, travelled) - 1, len(self.points) - 2)
+        fraction = (travelled - self.cumulative[index]) / (self.cumulative[index + 1] - self.cumulative[index])
+        a, b = self.points[index:index + 2]
+        return tuple(a[i] + (b[i] - a[i]) * fraction for i in (0, 1))
+
+    def turn_factor(self, travelled, lookahead):
+        travelled %= self.length
+        index = min(bisect_right(self.cumulative, travelled) - 1, len(self.points) - 2)
+        distance_to_turn = self.cumulative[index + 1] - travelled
+        if distance_to_turn >= lookahead:
+            return 1.0
+        previous, current = self.points[index:index + 2]
+        following = self.points[(index + 2) % (len(self.points) - 1)]
+        scale = math.cos(math.radians(current[0]))
+        incoming = (current[0] - previous[0], (current[1] - previous[1]) * scale)
+        outgoing = (following[0] - current[0], (following[1] - current[1]) * scale)
+        denominator = math.hypot(*incoming) * math.hypot(*outgoing)
+        if not denominator:
+            return 1.0
+        cosine = max(-1.0, min(1.0, sum(a * b for a, b in zip(incoming, outgoing)) / denominator))
+        return 1.0 - .18 * math.acos(cosine) / math.pi * (1.0 - distance_to_turn / lookahead)
+
+
+async def run1(loc_sim, loc: list, model, dt=DT, *, clock=None, sleep=None):
+    """Advance by real elapsed time; slow device calls do not slow the route clock."""
+    clock, sleep = clock or time.monotonic, sleep or asyncio.sleep
+    varied = randLoc(loc, n=min(len(loc), random.randint(5, 9)))
+    path = MetricRoute([bd09Towgs84(point) for point in varied])
     model.start_lap()
-    last = len(fixedLoc) - 1
-    index = 0.0
-    while index < last:
+    progress = getattr(model, "_lap_remainder", 0.0)
+    if getattr(model, "_last_sample_time", None) is None:
         if stop_requested():
             raise RunStopped()
-        position = min(int(index), last - 1)
-        previous = fixedLoc[max(0, position - 1)]
-        current = fixedLoc[position]
-        following = fixedLoc[min(last, position + 1)]
-        incoming = (current["lat"] - previous["lat"], current["lng"] - previous["lng"])
-        outgoing = (following["lat"] - current["lat"], following["lng"] - current["lng"])
-        incoming_size = math.hypot(*incoming)
-        outgoing_size = math.hypot(*outgoing)
-        turn_factor = 1.0
-        if incoming_size and outgoing_size:
-            cosine = max(-1.0, min(1.0, (incoming[0] * outgoing[0] + incoming[1] * outgoing[1]) /
-                                    (incoming_size * outgoing_size)))
-            turn_angle = math.acos(cosine)
-            turn_factor = 1.0 - min(0.18, turn_angle / math.pi * 0.18)
-        index += model.step(turn_factor=turn_factor) / nominal
-        if model.reached_target():
-            break
-        position = int(index)
-        if position >= last:
-            break
-        fraction = index - position
-        start = fixedLoc[position]
-        end = fixedLoc[position + 1]
-        wgs = bd09Towgs84({
-            "lat": start["lat"] + (end["lat"] - start["lat"]) * fraction,
-            "lng": start["lng"] + (end["lng"] - start["lng"]) * fraction,
-        })
-        await loc_sim.set(wgs["lat"], wgs["lng"])
-        await asyncio.sleep(dt)
+        now = clock()
+        await loc_sim.set(*path.sample(progress))
+        model._last_sample_time = now
+    while not model.reached_target():
+        if stop_requested():
+            raise RunStopped()
+        await sleep(max(0.0, model._last_sample_time + dt - clock()))
+        if stop_requested():
+            raise RunStopped()
+        now = clock()
+        delta = now - model._last_sample_time
+        if delta <= 0:
+            continue
+        previous_distance = model.distance
+        remaining = model.target_distance - previous_distance
+        velocity = model.step(turn_factor=path.turn_factor(progress, model.base_speed), dt=delta)
+        movement = min(velocity * delta, remaining)
+        model.distance = min(model.target_distance, previous_distance + movement)
+        progress += movement
+        await loc_sim.set(*path.sample(progress))
+        model._last_sample_time = now
+        if progress >= path.length:
+            # Carry the fractional remainder into the next lap; do not insert
+            # a short last interval or repeat the start point at each boundary.
+            model._lap_remainder = progress % path.length
+            return
+
+async def follow_route(loc_sim, loc, speed, duration_seconds=None, variation=None):
+    """Feed the same route to either an iOS or Android location provider."""
+    if len(loc) < 2:
+        raise ValueError("路线至少需要两个坐标点。")
+    random.seed(time.time())
+    model = build_pace_model(speed, DT, duration_seconds, variation)
+    loc_sim = TrackingLocation(loc_sim)
+    emit("run_state", state="running")
+    print(f"速度波动：{model.describe()}", flush=True)
+
+    async def loop():
+        while True:
+            await run1(loc_sim, loc, model, dt=DT)
+            if model.reached_target():
+                print(f"已达到目标里程 {model.target_distance / 1000:.1f} km", flush=True)
+                return
+            print(
+                f"跑完一圈了（{model.distance / 1000:.2f}/{model.target_distance / 1000:.1f} km，"
+                f"当前均值 {model.mean_speed():.2f} m/s，实测 CV {model.realized_cv():.1f}%）",
+                flush=True,
+            )
+
+    limit = asyncio.timeout(duration_seconds)
+    reason = "completed"
+    try:
+        async with limit:
+            await loop()
+    except RunStopped:
+        reason = "stopped"
+        print("收到停止请求，正在停止路线推送...", flush=True)
+    except asyncio.TimeoutError:
+        if not limit.expired():
+            reason = "error"
+            raise
+        reason = "duration"
+        print("已达到设定时长，正在停止路线推送...", flush=True)
+    except BaseException:
+        reason = "error"
+        raise
+    finally:
+        emit("run_state", state="stopped", reason=reason)
+
 
 async def run(address, port, loc: list, v, d=15, duration_seconds=None, variation=None):
-    random.seed(time.time())
-    model = build_pace_model(v, DT, duration_seconds, variation)
-    print(f"速度波动：{model.describe()}", flush=True)
+    from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+    from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
+    from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
+
     rsd = RemoteServiceDiscoveryService((address, port))
     await asyncio.sleep(2)
     await rsd.connect()
@@ -343,24 +413,7 @@ async def run(address, port, loc: list, v, d=15, duration_seconds=None, variatio
     async with DvtProvider(rsd) as dvt:
         async with LocationSimulation(dvt) as loc_sim:
             try:
-                async def _loop():
-                    while True:
-                        await run1(loc_sim, loc, model, dt=DT)
-                        print(
-                            f"跑完一圈了（{model.distance / 1000:.2f}/{model.target_distance / 1000:.1f} km，"
-                            f"当前均值 {model.mean_speed():.2f} m/s，实测 CV {model.realized_cv():.1f}%）",
-                            flush=True,
-                        )
-                        if model.reached_target():
-                            print(f"已达到目标里程 {model.target_distance / 1000:.1f} km", flush=True)
-                            break
-
-                if duration_seconds:
-                    await asyncio.wait_for(_loop(), timeout=duration_seconds)
-                else:
-                    await _loop()
-            except RunStopped:
-                print("收到停止请求，正在恢复真实定位...", flush=True)
+                await follow_route(loc_sim, loc, v, duration_seconds, variation)
             finally:
                 try:
                     await loc_sim.clear()

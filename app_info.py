@@ -1,0 +1,2 @@
+APP_VERSION = "1.4.3"
+GITHUB_REPOSITORY = "Obladi0617/ios-realrun"

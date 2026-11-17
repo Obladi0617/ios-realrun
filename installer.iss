@@ -1,5 +1,11 @@
 #define MyAppName "iOS RealRun"
-#define MyAppVersion "1.2.3"
+#ifndef MyBuildDir
+  #define MyBuildDir "dist\iOSRealRun"
+#endif
+#ifndef MyInstallerDir
+  #define MyInstallerDir "dist\installer"
+#endif
+#define MyAppVersion GetStringFileInfo(MyBuildDir + "\iOSRealRun.exe", "ProductVersion")
 #define MyAppPublisher "iOSRealRun"
 #define MyAppExeName "iOSRealRun.exe"
 
@@ -10,16 +16,18 @@ AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
-OutputDir=dist\installer
+OutputDir={#MyInstallerDir}
 OutputBaseFilename=iOS-RealRun-Setup
 Compression=lzma
 SolidCompression=yes
 PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64
 WizardStyle=modern
+AppMutex=Local\iOSRealRunGui
+CloseApplications=no
 
 [Files]
-Source: "dist\iOSRealRun\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#MyBuildDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autodesktop}\iOS RealRun"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"

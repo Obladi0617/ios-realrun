@@ -1,0 +1,6 @@
+Campus map extracts contain OpenStreetMap data, © OpenStreetMap contributors.
+OpenStreetMap data is made available under the Open Database License (ODbL) 1.0.
+Copyright, attribution and licence: https://www.openstreetmap.org/copyright
+ODbL: https://opendatacommons.org/licenses/odbl/1-0/
+The source API URL is included in each GeoJSON file.
+Refresh these extracts with scripts/build_offline_maps.py.

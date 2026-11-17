@@ -55,8 +55,10 @@ async def main():
 
     logger.info("trying to start tunnel")
     original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
-    process, address, port = tunnel.tunnel()
-    signal.signal(signal.SIGINT, original_sigint_handler)
+    try:
+        process, address, port = tunnel.tunnel()
+    finally:
+        signal.signal(signal.SIGINT, original_sigint_handler)
     if process is None or not address or not port:
         raise RuntimeError("无法建立 iOS 隧道。请以管理员权限运行，并确认 iTunes/Apple Mobile Device 服务正常。")
     try:
@@ -85,7 +87,8 @@ async def main():
             print()
             print(f"已运行 {args.minutes} 分钟，正在停止...")
         except Exception:
-            logger.debug("unexpected error", exc_info=True)
+            logger.exception("定位推送失败")
+            raise
         finally:
             logger.debug(f"Is process alive? {process.is_alive() if process else False}")
             logger.debug("Start to clear location")

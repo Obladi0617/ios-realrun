@@ -11,12 +11,16 @@ import multiprocessing
 from ctypes import wintypes
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox, scrolledtext, ttk
+from tkinter import filedialog, messagebox, scrolledtext, ttk
+
+from app_info import APP_VERSION
+from app_settings import ROUTES, load_settings, save_settings, validate_run
+from session_control import STOP_FILE_ENV
+from external_process import external_popen
 
 
 BASE_DIR = Path(__file__).resolve().parent
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else BASE_DIR
-STOP_FILE_ENV = "IOSREALRUN_STOP_FILE"
 STOP_FLAG = Path(tempfile.gettempdir()) / "ios-realrun-stop.flag"
 LOG_FILE = Path(tempfile.gettempdir()) / "ios-realrun-gui.log"
 
@@ -25,10 +29,12 @@ SW_RESTORE = 9
 ERROR_ALREADY_EXISTS = 183
 
 VARIATION_PROFILES = {
+    "匀速": "constant",
     "平稳": "steady",
     "业余跑者": "recreational",
     "波动较大": "variable",
 }
+BACKENDS = {"iPhone / iPad（USB）": "ios", "Android 模拟器（APK）": "android"}
 
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 LOGGER_PREFIX = re.compile(
@@ -46,6 +52,8 @@ if sys.platform == "win32":
     _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     _kernel32.CreateMutexW.restype = wintypes.HANDLE
     _kernel32.CreateMutexW.argtypes = (wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR)
+    _kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    _kernel32.CloseHandle.restype = wintypes.BOOL
 else:
     _user32 = None
     _kernel32 = None
@@ -61,7 +69,11 @@ def acquire_gui_instance() -> bool:
     _gui_mutex = _kernel32.CreateMutexW(None, False, "Local\\iOSRealRunGui")
     if not _gui_mutex:
         return True
-    return ctypes.get_last_error() != ERROR_ALREADY_EXISTS
+    if ctypes.get_last_error() == ERROR_ALREADY_EXISTS:
+        _kernel32.CloseHandle(_gui_mutex)
+        _gui_mutex = None
+        return False
+    return True
 
 def activate_existing_instance() -> bool:
     """Bring an existing iOS RealRun window to the front.
@@ -96,12 +108,18 @@ class RunnerApp:
     def __init__(self, root):
         self.root = root
         self.root.title(WINDOW_TITLE)
-        self.root.geometry("820x650")
-        self.root.minsize(720, 560)
+        self.root.geometry("860x780")
+        self.root.minsize(820, 680)
         self.root.configure(bg="#11161d")
         self.output_queue = queue.Queue()
         self.process = None
         self.action_process = None
+        self.settings = load_settings()
+        self.task_name = ""
+        self.stopping = False
+        self.closing = False
+        self.updating = False
+        self.controls = []
         self.setup_style()
         self.build_ui()
         self.root.after(100, self.consume_output)
@@ -129,27 +147,62 @@ class RunnerApp:
     def build_ui(self):
         header = ttk.Frame(self.root)
         header.pack(fill="x", padx=28, pady=(24, 12))
-        ttk.Label(header, text="iOS RealRun", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(header, text="真实路线 · 设备状态 · 配速模拟", style="Muted.TLabel").pack(anchor="w", pady=(3, 0))
+        ttk.Label(header, text="iOS RealRun", style="Title.TLabel").pack(side="left")
+        self.update_button = ttk.Button(header, text="检查更新", command=self.check_update)
+        self.update_button.pack(side="right")
+        ttk.Label(header, text=f"v{APP_VERSION}", style="Muted.TLabel").pack(side="right", padx=12)
+
+        backend_row = ttk.Frame(self.root)
+        backend_row.pack(fill="x", padx=28)
+        self.backend = tk.StringVar(value=next(label for label, value in BACKENDS.items() if value == self.settings["backend"]))
+        backend_box = ttk.Combobox(backend_row, textvariable=self.backend, values=tuple(BACKENDS), state="readonly", width=28)
+        backend_box.pack(side="left")
+        self.controls.append((backend_box, "readonly"))
+        backend_box.bind("<<ComboboxSelected>>", self.change_backend)
+        self.backend_hint = ttk.Label(backend_row, style="Muted.TLabel")
+        self.backend_hint.pack(side="left", padx=12)
 
         panel = ttk.Frame(self.root, style="Panel.TFrame", padding=20)
         panel.pack(fill="x", padx=28, pady=8)
         panel.columnconfigure(1, weight=1)
         ttk.Label(panel, text="路线", style="Panel.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 16), pady=7)
-        self.route = tk.StringVar(value="ZJGroute.txt")
-        route_box = ttk.Combobox(panel, textvariable=self.route, values=("ZJGroute.txt", "YQroute.txt", "HNroute.txt"), state="readonly")
+        self.route = tk.StringVar(value=self.settings["route"])
+        route_box = ttk.Combobox(panel, textvariable=self.route, values=ROUTES, state="readonly")
         route_box.grid(row=0, column=1, sticky="ew", pady=7)
+        self.controls.append((route_box, "readonly"))
         ttk.Label(panel, text="速度 (m/s)", style="Panel.TLabel").grid(row=1, column=0, sticky="w", padx=(0, 16), pady=7)
-        self.speed = tk.StringVar(value="4.8")
-        ttk.Entry(panel, textvariable=self.speed).grid(row=1, column=1, sticky="ew", pady=7)
+        self.speed = tk.StringVar(value=self.settings["speed"])
+        speed_entry = ttk.Entry(panel, textvariable=self.speed)
+        speed_entry.grid(row=1, column=1, sticky="ew", pady=7)
+        self.controls.append((speed_entry, "normal"))
         ttk.Label(panel, text="运行时长", style="Panel.TLabel").grid(row=2, column=0, sticky="w", padx=(0, 16), pady=7)
-        self.duration = tk.StringVar(value="30")
-        ttk.Combobox(panel, textvariable=self.duration, values=("10", "20", "30", "45", "60", "0"), state="readonly").grid(row=2, column=1, sticky="ew", pady=7)
-        ttk.Label(panel, text="分钟，0 表示手动停止", style="Panel.TLabel").grid(row=2, column=2, sticky="w", padx=(12, 0), pady=7)
+        self.duration = tk.StringVar(value=self.settings["minutes"])
+        duration_box = ttk.Combobox(panel, textvariable=self.duration, values=("10", "20", "30", "45", "60", "0"))
+        duration_box.grid(row=2, column=1, sticky="ew", pady=7)
+        self.controls.append((duration_box, "normal"))
+        ttk.Label(panel, text="分钟，0 表示仅按目标里程停止", style="Panel.TLabel").grid(row=2, column=2, sticky="w", padx=(12, 0), pady=7)
         ttk.Label(panel, text="配速波动", style="Panel.TLabel").grid(row=3, column=0, sticky="w", padx=(0, 16), pady=7)
-        self.profile = tk.StringVar(value="业余跑者")
-        ttk.Combobox(panel, textvariable=self.profile, values=tuple(VARIATION_PROFILES), state="readonly").grid(row=3, column=1, sticky="ew", pady=7)
+        self.profile = tk.StringVar(value=next(label for label, value in VARIATION_PROFILES.items() if value == self.settings["profile"]))
+        profile_box = ttk.Combobox(panel, textvariable=self.profile, values=tuple(VARIATION_PROFILES), state="readonly")
+        profile_box.grid(row=3, column=1, sticky="ew", pady=7)
+        self.controls.append((profile_box, "readonly"))
         ttk.Label(panel, text="模拟真人速度起伏", style="Panel.TLabel").grid(row=3, column=2, sticky="w", padx=(12, 0), pady=7)
+
+        self.android_panel = ttk.Frame(panel, style="Panel.TFrame")
+        self.android_panel.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        self.android_panel.columnconfigure(1, weight=1)
+        self.sdk = tk.StringVar(value=self.settings["sdk"])
+        self.avd = tk.StringVar(value=self.settings["avd"])
+        self.serial = tk.StringVar(value=self.settings["serial"])
+        for row, (label, variable) in enumerate((("Android SDK", self.sdk), ("AVD 名称", self.avd), ("设备编号", self.serial))):
+            ttk.Label(self.android_panel, text=label, style="Panel.TLabel").grid(row=row, column=0, sticky="w", padx=(0, 16), pady=4)
+            entry = ttk.Entry(self.android_panel, textvariable=variable)
+            entry.grid(row=row, column=1, sticky="ew", pady=4)
+            self.controls.append((entry, "normal"))
+        self.sdk_button = ttk.Button(self.android_panel, text="选择目录", command=self.choose_sdk)
+        self.sdk_button.grid(row=0, column=2, padx=(12, 0))
+        ttk.Label(self.android_panel, text="启动前填写虚拟设备名称", style="Panel.TLabel").grid(row=1, column=2, padx=(12, 0))
+        ttk.Label(self.android_panel, text="留空自动选择唯一模拟器", style="Panel.TLabel").grid(row=2, column=2, padx=(12, 0))
 
         actions = ttk.Frame(self.root)
         actions.pack(fill="x", padx=28, pady=(8, 4))
@@ -161,6 +214,15 @@ class RunnerApp:
         self.start_button.pack(side="right", padx=(8, 0))
         self.stop_button = ttk.Button(actions, text="停止", style="Danger.TButton", command=self.stop_run, state="disabled")
         self.stop_button.pack(side="right")
+
+        self.android_actions = ttk.Frame(self.root)
+        self.android_actions.pack(fill="x", padx=28, pady=4)
+        self.list_button = ttk.Button(self.android_actions, text="列出虚拟设备", command=lambda: self.execute(("--list-android",), action=True, name="列出虚拟设备"))
+        self.list_button.pack(side="left")
+        self.emulator_button = ttk.Button(self.android_actions, text="启动模拟器", command=lambda: self.execute(("--start-emulator", "--avd", self.avd.get().strip()), action=True, name="启动模拟器"))
+        self.emulator_button.pack(side="left", padx=8)
+        self.apk_button = ttk.Button(self.android_actions, text="安装 APK", command=self.install_apk)
+        self.apk_button.pack(side="left")
 
         status_panel = ttk.Frame(self.root, style="Panel.TFrame", padding=(16, 10))
         status_panel.pack(fill="x", padx=28, pady=(8, 4))
@@ -176,14 +238,49 @@ class RunnerApp:
         ttk.Button(log_header, text="清空", command=self.clear_log).pack(side="right")
         self.log = scrolledtext.ScrolledText(log_frame, height=12, bg="#0c1117", fg="#b8c7d3", insertbackground="#f2b84b", relief="flat", borderwidth=0, font=("Cascadia Mono", 9), padx=12, pady=10)
         self.log.pack(fill="both", expand=True)
-        self.write_log("控制台已就绪。请解锁设备并点击“检查设备”。")
+        self.change_backend()
+        self.write_log("控制台已就绪。选择设备类型，再点击“检查设备”。")
+
+    def is_android(self):
+        return BACKENDS[self.backend.get()] == "android"
+
+    def change_backend(self, _event=None):
+        if self.is_android():
+            self.android_panel.grid()
+            self.android_actions.pack(after=self.mount_button.master, fill="x", padx=28, pady=4)
+            self.mount_button.pack_forget()
+            self.backend_hint.configure(text="在电脑内运行 APK，需安装官方 Android Emulator")
+        else:
+            self.android_panel.grid_remove()
+            self.android_actions.pack_forget()
+            self.mount_button.pack(side="left", padx=8)
+            self.backend_hint.configure(text="连接一台已解锁并信任电脑的 iOS 设备")
+
+    def choose_sdk(self):
+        path = filedialog.askdirectory(title="选择 Android SDK 目录")
+        if path:
+            self.sdk.set(path)
+
+    def install_apk(self):
+        path = filedialog.askopenfilename(title="选择 Android APK", filetypes=[("Android 安装包", "*.apk")])
+        if path:
+            self.execute(("--install-apk", path), action=True, name="安装 APK")
+
+    def save_preferences(self):
+        try:
+            save_settings({"backend": BACKENDS[self.backend.get()], "route": self.route.get(),
+                           "speed": self.speed.get(), "minutes": self.duration.get(),
+                           "profile": VARIATION_PROFILES[self.profile.get()], "sdk": self.sdk.get().strip(),
+                           "serial": self.serial.get().strip(), "avd": self.avd.get().strip()})
+        except OSError as error:
+            self.write_log(f"保存设置失败：{error}")
 
     def worker_command(self, *args):
         if getattr(sys, "frozen", False):
             worker = APP_DIR / "iOSRealRun-worker.exe"
             if worker.exists():
                 return [str(worker), *args]
-            return [sys.executable, "--worker", *args]
+            raise RuntimeError("缺少 iOSRealRun-worker.exe，请重新安装完整安装包。")
         return [sys.executable, str(BASE_DIR / "worker.py"), *args]
 
     @staticmethod
@@ -226,8 +323,12 @@ class RunnerApp:
         if not display_text:
             return
         self.log.insert("end", display_text + "\n")
+        if int(self.log.index("end-1c").split(".")[0]) > 2000:
+            self.log.delete("1.0", "101.0")
         self.log.see("end")
         try:
+            if LOG_FILE.exists() and LOG_FILE.stat().st_size > 2 * 1024 * 1024:
+                LOG_FILE.replace(LOG_FILE.with_suffix(".previous.log"))
             with LOG_FILE.open("a", encoding="utf-8") as handle:
                 handle.write(f"[{time.strftime('%H:%M:%S')}] {display_text}\n")
         except OSError:
@@ -237,68 +338,107 @@ class RunnerApp:
         self.log.delete("1.0", "end")
         self.write_log("日志已清空。")
 
-    def execute(self, args, action=False):
-        target = self.action_process if action else self.process
-        if target and target.poll() is None:
+    def active_process(self):
+        return self.process or self.action_process
+
+    def refresh_buttons(self):
+        busy = self.active_process() is not None or self.updating or self.closing
+        for button in (self.check_button, self.mount_button, self.start_button, self.list_button,
+                       self.emulator_button, self.apk_button, self.sdk_button, self.update_button):
+            button.configure(state="disabled" if busy else "normal")
+        for widget, normal_state in self.controls:
+            widget.configure(state="disabled" if busy else normal_state)
+        self.stop_button.configure(state="normal" if self.active_process() and not self.stopping else "disabled")
+
+    def execute(self, args, action=False, name="模拟"):
+        if self.active_process() or self.updating or self.closing:
             return
+        clear_stop_flag()
         environment = os.environ.copy()
         environment["PYTHONIOENCODING"] = "utf-8"
         environment[STOP_FILE_ENV] = str(STOP_FLAG)
-        flags = subprocess.CREATE_NEW_PROCESS_GROUP | getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        process = subprocess.Popen(self.worker_command(*args), cwd=APP_DIR, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", env=environment, creationflags=flags)
+        flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        backend_args = ("--backend", "android", "--sdk", self.sdk.get().strip(), "--serial", self.serial.get().strip()) if self.is_android() else ()
+        try:
+            process = subprocess.Popen(self.worker_command(*args, *backend_args), cwd=APP_DIR,
+                                       stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                       text=True, encoding="utf-8", errors="replace", env=environment, creationflags=flags)
+        except (OSError, RuntimeError) as error:
+            self.write_log(f"启动失败：{error}")
+            self.status.set("启动失败")
+            return
         if action:
             self.action_process = process
         else:
             self.process = process
+        self.task_name = name
+        self.stopping = False
+        self.status.set(name + "中")
+        self.save_preferences()
+        self.refresh_buttons()
         threading.Thread(target=self.read_process, args=(process,), daemon=True).start()
 
     def read_process(self, process):
-        for line in process.stdout:
-            self.output_queue.put((process, line))
-        self.output_queue.put((process, f"[进程结束，退出码 {process.wait()}]"))
+        try:
+            for line in process.stdout:
+                self.output_queue.put(("line", process, line))
+        finally:
+            process.stdout.close()
+            self.output_queue.put(("done", process, process.wait()))
 
     def consume_output(self):
-        while not self.output_queue.empty():
-            process, line = self.output_queue.get_nowait()
-            self.write_log(line)
-            if process is self.process and process.poll() is not None:
-                self.process = None
-                self.start_button.configure(state="normal")
-                self.stop_button.configure(state="disabled")
-                self.status.set("已停止")
-            if process is self.action_process and process.poll() is not None:
-                self.action_process = None
-                self.check_button.configure(state="normal")
-                self.mount_button.configure(state="normal")
-                self.status.set("就绪")
+        while True:
+            try:
+                kind, source, value = self.output_queue.get_nowait()
+            except queue.Empty:
+                break
+            if kind == "line":
+                self.write_log(value)
+            elif kind == "done" and source is self.active_process():
+                self.write_log(f"任务结束，退出码 {value}")
+                was_run = source is self.process
+                self.process = self.action_process = None
+                if value != 0:
+                    self.status.set("操作失败，请查看日志")
+                elif self.stopping or was_run:
+                    self.status.set("已停止")
+                else:
+                    self.status.set(self.task_name + "完成")
+                self.stopping = False
+                clear_stop_flag()
+                self.refresh_buttons()
+                if self.closing:
+                    self.root.destroy()
+                    return
+            elif kind == "update_checked":
+                self.offer_update(value)
+            elif kind == "update_error":
+                self.updating = False
+                self.update_button.configure(text="检查更新")
+                self.refresh_buttons()
+                self.write_log(f"更新失败：{value}")
+                messagebox.showerror("更新失败", value)
+            elif kind == "update_progress":
+                self.update_button.configure(text=f"下载 {value}%")
+            elif kind == "update_ready":
+                self.finish_update(value)
         self.root.after(100, self.consume_output)
 
     def check_device(self):
-        self.status.set("检查中")
-        self.check_button.configure(state="disabled")
         self.write_log("正在检查设备连接...")
-        self.execute(("--check",), action=True)
+        self.execute(("--check",), action=True, name="检查设备")
 
     def mount_image(self):
-        self.status.set("挂载中")
-        self.mount_button.configure(state="disabled")
         self.write_log("正在挂载开发者镜像...")
-        self.execute(("--mount",), action=True)
+        self.execute(("--mount",), action=True, name="挂载镜像")
 
     def start_run(self):
         try:
-            speed = float(self.speed.get())
-            minutes = int(self.duration.get())
-            if speed <= 0 or minutes < 0:
-                raise ValueError
-        except ValueError:
-            messagebox.showerror("配置错误", "速度必须大于 0，时长必须是非负整数。")
+            speed, minutes = validate_run(self.speed.get(), self.duration.get())
+        except (ValueError, OverflowError):
+            messagebox.showerror("配置错误", "速度范围为 0.1–100 m/s，时长必须是非负整数。")
             return
-        clear_stop_flag()
         profile = VARIATION_PROFILES.get(self.profile.get(), "recreational")
-        self.status.set("模拟运行中")
-        self.start_button.configure(state="disabled")
-        self.stop_button.configure(state="normal")
         self.write_log(f"开始模拟：{self.route.get()} / {speed:g} m/s / {minutes} 分钟 / 波动 {self.profile.get()}")
         self.execute(("--run", "--route", self.route.get(), "--speed", str(speed), "--minutes", str(minutes), "--profile", profile))
 
@@ -310,40 +450,111 @@ class RunnerApp:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 check=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
         except OSError:
             pass
 
     def stop_run(self, wait_seconds: float = 25.0) -> None:
         """Ask the worker to stop gracefully so the real GPS location is restored."""
-        if not self.process or self.process.poll() is not None:
+        process = self.active_process()
+        if not process or self.stopping:
             return
-        self.write_log("正在停止模拟并恢复真实定位...")
+        self.stopping = True
+        self.status.set("正在停止")
+        self.refresh_buttons()
+        self.write_log("正在停止任务..." if self.is_android() else "正在停止任务，运行中的模拟会恢复真实定位...")
         request_stop()
-        deadline = time.monotonic() + wait_seconds
-        while time.monotonic() < deadline and self.process.poll() is None:
-            time.sleep(0.2)
-        if self.process.poll() is None:
-            self.write_log("模拟未在超时内退出，强制结束进程。")
-            self.force_kill(self.process.pid)
+
+        def wait_for_stop():
+            try:
+                process.wait(timeout=wait_seconds)
+            except subprocess.TimeoutExpired:
+                self.output_queue.put(("line", process, "任务未在超时内退出，强制结束进程。"))
+                if sys.platform == "win32":
+                    self.force_kill(process.pid)
+                else:
+                    process.kill()
+
+        threading.Thread(target=wait_for_stop, daemon=True).start()
+
+    def check_update(self):
+        if self.active_process() or self.updating:
+            return
+        self.updating = True
+        self.update_button.configure(text="正在检查")
+        self.refresh_buttons()
+
+        def check():
+            from app_update import latest_update
+
+            try:
+                self.output_queue.put(("update_checked", None, latest_update()))
+            except Exception as error:
+                self.output_queue.put(("update_error", None, str(error)))
+
+        threading.Thread(target=check, daemon=True).start()
+
+    def offer_update(self, update):
+        if update is None:
+            self.updating = False
+            self.update_button.configure(text="检查更新")
+            self.refresh_buttons()
+            messagebox.showinfo("检查更新", f"当前 v{APP_VERSION}，没有更新的正式版本。")
+            return
+        if not messagebox.askyesno("发现新版本", f"发现 v{update.version}（{update.size / 1024 / 1024:.1f} MB）。\n是否下载安装包？下载后将验证 SHA256。"):
+            self.updating = False
+            self.update_button.configure(text="检查更新")
+            self.refresh_buttons()
+            return
+        self.update_button.configure(text="下载 0%")
+
+        def download():
+            from app_update import download_update
+
+            try:
+                path = download_update(update, progress=lambda done, total: self.output_queue.put(("update_progress", None, int(done * 100 / total))))
+                self.output_queue.put(("update_ready", None, path))
+            except Exception as error:
+                self.output_queue.put(("update_error", None, str(error)))
+
+        threading.Thread(target=download, daemon=True).start()
+
+    def finish_update(self, path):
+        self.updating = False
+        self.update_button.configure(text="检查更新")
+        self.refresh_buttons()
+        self.write_log(f"安装包已下载并通过 SHA256 校验：{path}")
+        if not getattr(sys, "frozen", False):
+            messagebox.showinfo("下载完成", f"当前从源码运行，安装包已保存到：\n{path}")
+            return
+        if messagebox.askyesno("准备安装", "安装包已验证。现在关闭程序并启动新版安装向导吗？"):
+            try:
+                external_popen([str(path), f"/DIR={APP_DIR}", "/NORESTART"])
+            except OSError as error:
+                messagebox.showerror("启动安装失败", str(error))
+                return
+            self.save_preferences()
+            self.root.destroy()
 
     def close(self):
-        if self.process and self.process.poll() is None:
-            if not messagebox.askyesno("确认退出", "模拟仍在运行，退出前会先恢复真实定位。确定退出吗？"):
+        if self.closing:
+            return
+        if self.active_process():
+            prompt = "任务仍在运行，退出前会先停止任务。确定退出吗？" if self.is_android() else "任务仍在运行，退出前会停止任务并清除运行中的模拟定位。确定退出吗？"
+            if not messagebox.askyesno("确认退出", prompt):
                 return
+            self.closing = True
             self.stop_run()
+            self.refresh_buttons()
+            return
+        self.save_preferences()
         clear_stop_flag()
         self.root.destroy()
 
 
-if __name__ == "__main__":
+def main():
     multiprocessing.freeze_support()
-    if "--worker" in sys.argv:
-        sys.argv = [sys.argv[0], *sys.argv[sys.argv.index("--worker") + 1:]]
-        import worker
-
-        worker.main()
-        raise SystemExit
     if activate_existing_instance():
         raise SystemExit
     if not acquire_gui_instance():
@@ -352,3 +563,7 @@ if __name__ == "__main__":
     app_root = tk.Tk()
     RunnerApp(app_root)
     app_root.mainloop()
+
+
+if __name__ == "__main__":
+    main()
