@@ -393,7 +393,7 @@ GUI 提供四种配速档位：
 
 1. **直接下载缓存包（最快）**
 
-   **[⬇️ 下载 Xcode_iOS_DDI_Personalized.zip](https://github.com/Obladi0617/ios-realrun/releases/latest/download/Xcode_iOS_DDI_Personalized.zip)**（约 15 MB）
+   **[⬇️ 下载 Xcode_iOS_DDI_Personalized.zip](https://github.com/Obladi0617/ios-realrun/releases/download/v1.1.0/Xcode_iOS_DDI_Personalized.zip)**（约 15 MB，沿用已有公开缓存）
 
    解压后把里面的 `Image.dmg`、`Image.trustcache`、`BuildManifest.plist` 三个文件放到：
 

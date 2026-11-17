@@ -10,6 +10,7 @@ on:
       - '*.spec'
       - 'installer.iss'
       - 'build_windows.ps1'
+      - 'frontend/**'
 permissions:
   contents: read
 jobs:
@@ -22,14 +23,29 @@ jobs:
         with:
           python-version: '3.11'
           architecture: x64
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
       - name: Prepare Python environment
         shell: pwsh
         run: |
           python -m venv venv
-          & .\venv\Scripts\python.exe -m pip install -r requirements.txt "pymobiledevice3==11.49.1" pyinstaller
+          & .\venv\Scripts\python.exe -m pip install -r requirements.txt "pymobiledevice3==11.49.1" "pywebview==6.2.1" "PyYAML==6.0.1" "geopy==2.4.1" pyinstaller
           if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed" }
           & .\venv\Scripts\python.exe -m pip check
           if ($LASTEXITCODE -ne 0) { throw "Dependency check failed" }
+          $version = & .\venv\Scripts\python.exe -c "from app_info import APP_VERSION; print(APP_VERSION)"
+          if ($LASTEXITCODE -ne 0 -or $version -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid application version" }
+          "REALRUN_VERSION=$version" >> $env:GITHUB_ENV
+      - name: Verify source
+        shell: pwsh
+        run: |
+          & .\venv\Scripts\python.exe -m unittest discover -s tests -v
+          if ($LASTEXITCODE -ne 0) { throw "Unit tests failed" }
+          & .\venv\Scripts\python.exe -c "from pymobiledevice3.services.mobile_image_mounter import MobileImageMounterService, auto_mount; from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation; from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider"
+          if ($LASTEXITCODE -ne 0) { throw "iOS provider imports failed" }
       - name: Install Inno Setup
         shell: pwsh
         run: |
@@ -39,18 +55,30 @@ jobs:
         shell: pwsh
         run: |
           .\build_windows.ps1
-          if (!(Test-Path dist\installer\iOS-RealRun-Setup.exe)) { throw "Installer missing" }
-          if (!(Test-Path dist\iOSRealRun\iOSRealRun-worker.exe)) { throw "Worker missing" }
-          & .\dist\iOSRealRun\iOSRealRun-worker.exe --help
+          $bundle = "dist\v$env:REALRUN_VERSION\iOSRealRun"
+          $installer = "dist\v$env:REALRUN_VERSION\installer"
+          if (!(Test-Path "$installer\iOS-RealRun-Setup.exe")) { throw "Installer missing" }
+          if (!(Test-Path "$bundle\iOSRealRun-worker.exe")) { throw "Worker missing" }
+          & "$bundle\iOSRealRun-worker.exe" --help
           if ($LASTEXITCODE -ne 0) { throw "Packaged worker smoke test failed" }
+          $report = Join-Path $PWD "$installer\desktop-diagnostics.json"
+          $application = Start-Process -FilePath "$bundle\iOSRealRun.exe" -ArgumentList @('--diagnose','--report-file',('"'+$report+'"')) -WindowStyle Hidden -Wait -PassThru
+          if ($application.ExitCode -ne 0) { throw "Desktop dependency check failed" }
+          $diagnostic = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
+          if (!$diagnostic.frontend -or $diagnostic.error) { throw "Desktop frontend missing or dependencies failed" }
+          Compress-Archive -LiteralPath $bundle -DestinationPath "$installer\iOS-RealRun-Portable-v$env:REALRUN_VERSION.zip" -CompressionLevel Optimal
       - name: Record dependencies
         shell: pwsh
         run: |
-          & .\venv\Scripts\python.exe -m pip freeze | Out-File dist\installer\dependencies.txt
-          Get-FileHash dist\installer\iOS-RealRun-Setup.exe -Algorithm SHA256 | Format-List | Out-File dist\installer\SHA256.txt
+          $installer = "dist\v$env:REALRUN_VERSION\installer"
+          & .\venv\Scripts\python.exe -m pip freeze | Set-Content -LiteralPath "$installer\dependencies.txt" -Encoding utf8
+          @('iOS-RealRun-Setup.exe', "iOS-RealRun-Portable-v$env:REALRUN_VERSION.zip") | ForEach-Object {
+            $hash = (Get-FileHash -LiteralPath (Join-Path $installer $_) -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $_"
+          } | Set-Content -LiteralPath "$installer\SHA256SUMS.txt" -Encoding ascii
       - uses: actions/upload-artifact@v4
         with:
           name: iOS-RealRun-Windows
-          path: dist/installer/*
+          path: dist/v${{ env.REALRUN_VERSION }}/installer/*
           if-no-files-found: error
           retention-days: 30
