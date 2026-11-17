@@ -7,7 +7,7 @@ from pathlib import Path
 
 from app_info import APP_VERSION
 from app_settings import DEFAULTS, validate_run
-from session_control import RunStopped, interruptible_sleep, raise_if_stopped
+from session_control import RunStopped, raise_if_stopped
 
 
 def apply_profile(variation, profile):
@@ -20,66 +20,13 @@ def apply_profile(variation, profile):
 
 
 async def check_device():
-    from driver.connect import get_usbmux_lockdownclient
-
-    device = await get_usbmux_lockdownclient()
-    print(f"设备已连接：iOS {device.all_values.get('ProductVersion')} / {device.all_values.get('BuildVersion')}", flush=True)
+    from ios_session import check_device as check_ios
+    await check_ios()
 
 
 async def mount_image():
-    from driver.connect import get_usbmux_lockdownclient
-    from pymobiledevice3.exceptions import AlreadyMountedError
-    from pymobiledevice3.exceptions import MessageNotSupportedError
-    from pymobiledevice3.services.mobile_image_mounter import (
-        MobileImageMounterService,
-        auto_mount,
-    )
-
-    device = await get_usbmux_lockdownclient()
-
-    async def mounted_image_types():
-        async with MobileImageMounterService(device) as mounter:
-            try:
-                devices = await mounter.copy_devices()
-            except MessageNotSupportedError:
-                devices = []
-
-            mounted = [
-                "DeveloperDiskImage"
-                for entry in devices
-                if entry.get("IsMounted")
-                and entry.get("MountPath") == "/System/Developer"
-            ]
-            if mounted:
-                return mounted
-
-            mounted = []
-            for image_type in ("Developer", "Personalized"):
-                if await mounter.is_image_mounted(image_type):
-                    mounted.append(image_type)
-            return mounted
-
-    mounted = await mounted_image_types()
-    if mounted:
-        print(f"开发者镜像已挂载（{', '.join(mounted)}），继续运行", flush=True)
-        return
-
-    try:
-        await auto_mount(device)
-    except AlreadyMountedError:
-        print("开发者镜像已挂载，继续运行", flush=True)
-    except Exception:
-        # Mount can report a failure after the device has finished mounting.
-        # Only treat that as success when the device confirms a mounted image.
-        try:
-            mounted = await mounted_image_types()
-        except Exception:
-            mounted = []
-        if not mounted:
-            raise
-        print(f"开发者镜像已挂载（{', '.join(mounted)}），继续运行", flush=True)
-    else:
-        print("开发者镜像挂载成功", flush=True)
+    from ios_session import mount_image as mount_ios
+    await mount_ios()
 
 
 async def start_tunnel():
@@ -91,20 +38,14 @@ async def start_tunnel():
 
 def run_main(args):
     import config
+    from ios_session import run_async, run_ios
+    from util.route import parse_route
 
-    config.config.routeConfig = str((Path(__file__).resolve().parent / args.route).resolve())
-    config.config.v = args.speed
-    if args.profile:
-        config.config.speedVariation = apply_profile(getattr(config.config, "speedVariation", None), args.profile)
-    print("正在准备设备和开发者镜像...", flush=True)
-    asyncio.run(mount_image())
-    asyncio.run(interruptible_sleep(0.2))
-    import main
-
-    sys.argv = ["main.py"]
-    if args.minutes > 0:
-        sys.argv.extend(("--minutes", str(args.minutes)))
-    asyncio.run(main.main())
+    route_path = (Path(__file__).resolve().parent / args.route).resolve()
+    loc = parse_route(route_path.read_text(encoding="utf-8"))
+    variation = apply_profile(getattr(config.config, "speedVariation", {}), args.profile)
+    duration = args.minutes * 60 if args.minutes > 0 else None
+    run_async(run_ios(loc, args.speed, duration, variation))
 
 
 async def android_action(args):
@@ -180,9 +121,11 @@ def main():
         elif args.tunnel:
             asyncio.run(start_tunnel())
         elif args.check:
-            asyncio.run(check_device())
+            from ios_session import run_async
+            run_async(check_device())
         elif args.mount:
-            asyncio.run(mount_image())
+            from ios_session import run_async
+            run_async(mount_image())
         elif args.run:
             run_main(args)
         else:

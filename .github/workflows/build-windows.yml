@@ -47,7 +47,7 @@ jobs:
         run: |
           & .\venv\Scripts\python.exe -m unittest discover -s tests -v
           if ($LASTEXITCODE -ne 0) { throw "Unit tests failed" }
-          & .\venv\Scripts\python.exe -c "from pymobiledevice3.services.mobile_image_mounter import MobileImageMounterService, auto_mount; from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation; from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider"
+          & .\venv\Scripts\python.exe -c "from pymobiledevice3.remote.userspace_tunnel import UserspaceRsdTunnel; from pymobiledevice3.services.mobile_image_mounter import MobileImageMounterService, auto_mount; from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation; from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider"
           if ($LASTEXITCODE -ne 0) { throw "iOS provider imports failed" }
       - name: Install Inno Setup
         shell: pwsh

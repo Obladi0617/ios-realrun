@@ -403,12 +403,14 @@ async def follow_route(loc_sim, loc, speed, duration_seconds=None, variation=Non
 
 async def run(address, port, loc: list, v, d=15, duration_seconds=None, variation=None):
     from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+
+    async with RemoteServiceDiscoveryService((address, port)) as rsd:
+        await run_on_provider(rsd, loc, v, duration_seconds, variation)
+
+
+async def run_on_provider(rsd, loc, v, duration_seconds=None, variation=None):
     from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
     from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
-
-    rsd = RemoteServiceDiscoveryService((address, port))
-    await asyncio.sleep(2)
-    await rsd.connect()
 
     async with DvtProvider(rsd) as dvt:
         async with LocationSimulation(dvt) as loc_sim:
@@ -416,7 +418,7 @@ async def run(address, port, loc: list, v, d=15, duration_seconds=None, variatio
                 await follow_route(loc_sim, loc, v, duration_seconds, variation)
             finally:
                 try:
-                    await loc_sim.clear()
+                    await asyncio.wait_for(loc_sim.clear(), timeout=5)
                     print("已恢复真实定位", flush=True)
-                except Exception as error:  # noqa: BLE001
-                    print(f"清除模拟定位失败：{error}", flush=True)
+                except Exception as error:
+                    raise RuntimeError(f"清除模拟定位失败，请解锁并重新连接设备：{error}") from error

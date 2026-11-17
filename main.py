@@ -1,35 +1,9 @@
-import signal
-import logging
-import coloredlogs
-import os
-import asyncio
-import sys
 import argparse
 
-
-from init import init
-from init import tunnel
-from init import route
-
-import run
 import config
-
-
-
-debug = os.environ.get("DEBUG", False)
-
-coloredlogs.install(level=logging.INFO)
-logging.getLogger('wintun').setLevel(logging.DEBUG if debug else logging.WARNING)
-logging.getLogger('quic').setLevel(logging.DEBUG if debug else logging.WARNING)
-logging.getLogger('asyncio').setLevel(logging.DEBUG if debug else logging.WARNING)
-logging.getLogger('zeroconf').setLevel(logging.DEBUG if debug else logging.WARNING)
-logging.getLogger('parso.cache').setLevel(logging.DEBUG if debug else logging.WARNING)
-logging.getLogger('parso.cache.pickle').setLevel(logging.DEBUG if debug else logging.WARNING)
-logging.getLogger('parso.python.diff').setLevel(logging.DEBUG if debug else logging.WARNING)
-logging.getLogger('humanfriendly.prompts').setLevel(logging.DEBUG if debug else logging.WARNING)
-logging.getLogger('blib2to3.pgen2.driver').setLevel(logging.DEBUG if debug else logging.WARNING)
-logging.getLogger('urllib3.connectionpool').setLevel(logging.DEBUG if debug else logging.WARNING)
-
+from init import route
+from ios_session import run_async, run_ios
+from session_control import RunStopped
 
 
 async def main():
@@ -37,72 +11,15 @@ async def main():
     parser.add_argument("-m", "--minutes", type=int, default=0,
                         help="最长运行时长（分钟），默认达到约4公里后停止")
     args = parser.parse_args()
-
-    logger = logging.getLogger(__name__)
-    coloredlogs.install(level=logging.INFO)
-    logger.setLevel(logging.INFO)
-    if debug:
-        logger.setLevel(logging.DEBUG)
-        coloredlogs.install(level=logging.DEBUG)
-
-    if args.minutes > 0:
-        print(f"运行时长设置为 {args.minutes} 分钟")
-        print("到达时长后会自动停止并恢复真实定位")
-        print()
-
-    await init.init()
-    logger.info("init done")
-
-    logger.info("trying to start tunnel")
-    original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
-    try:
-        process, address, port = tunnel.tunnel()
-    finally:
-        signal.signal(signal.SIGINT, original_sigint_handler)
-    if process is None or not address or not port:
-        raise RuntimeError("无法建立 iOS 隧道。请以管理员权限运行，并确认 iTunes/Apple Mobile Device 服务正常。")
-    try:
-        logger.debug(f"tunnel address: {address}, port: {port}")
-
-        loc = route.get_route()
-        logger.info(f"got route from {config.config.routeConfig}")
-
-        try:
-            duration = args.minutes * 60 if args.minutes > 0 else None
-            variation = getattr(config.config, "speedVariation", {}) or {}
-            target_distance = float(variation.get("targetDistance", 4000.0))
-
-            if duration:
-                print(f"已开始模拟跑步，速度大约为 {config.config.v} m/s")
-                print(f"目标约 {target_distance / 1000:.1f} 公里，{args.minutes} 分钟后也会自动停止")
-            else:
-                print(f"已开始模拟跑步，速度大约为 {config.config.v} m/s")
-                print("达到目标里程后自动停止，也可按 Ctrl+C 提前退出")
-            print("请勿直接关闭窗口，否则无法还原正常定位")
-
-            await run.run(address, port, loc, config.config.v, duration_seconds=duration, variation=variation)
-        except KeyboardInterrupt:
-            logger.debug("get KeyboardInterrupt (inner)")
-        except asyncio.TimeoutError:
-            print()
-            print(f"已运行 {args.minutes} 分钟，正在停止...")
-        except Exception:
-            logger.exception("定位推送失败")
-            raise
-        finally:
-            logger.debug(f"Is process alive? {process.is_alive() if process else False}")
-            logger.debug("Start to clear location")
-
-    except KeyboardInterrupt:
-        logger.debug("get KeyboardInterrupt (outer)")
-    finally:
-        logger.debug(f"Is process alive? {process.is_alive() if process else False}")
-        logger.debug("terminating tunnel process")
-        tunnel.terminate_tunnel(process)
-        logger.info("tunnel process terminated")
-        print("Bye")
-
+    if args.minutes < 0:
+        parser.error("运行时长不能为负数")
+    await run_ios(route.get_route(), config.config.v,
+                  args.minutes * 60 if args.minutes else None,
+                  getattr(config.config, "speedVariation", {}) or {})
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        run_async(main())
+    except (RunStopped, KeyboardInterrupt):
+        print("操作已停止", flush=True)

@@ -1,4 +1,5 @@
 import json
+import io
 from pathlib import Path
 import tempfile
 import threading
@@ -73,6 +74,22 @@ class DesktopStateTests(unittest.TestCase):
             self.service.thread.join(2)
         self.assertEqual(self.service.state["device"]["status"], "error")
         self.assertEqual(self.service.state["task"]["status"], "error")
+
+    def test_iphone_mount_and_run_are_allowed_without_administrator(self):
+        self.service.settings["backend"] = "ios"
+        with patch.object(self.service, "is_admin", return_value=False), \
+             patch.object(self.service, "_worker") as worker:
+            self.service._perform("mount", {})
+            self.service._perform("run", {})
+        self.assertEqual(worker.call_args_list[0].args[0], ["--mount"])
+        self.assertIn("--run", worker.call_args_list[1].args[0])
+
+    def test_worker_cleanup_failure_is_visible_even_after_stop_was_requested(self):
+        self.service.stopping = True
+        process = type("FailedWorker", (), {"stdout": io.StringIO(""), "wait": lambda _: 1})()
+        with patch("desktop_service.subprocess.Popen", return_value=process):
+            with self.assertRaisesRegex(RuntimeError, "退出码 1"):
+                self.service._worker(["--run"])
 
     def test_login_confirmation_persists_but_changes_of_device_clear_it(self):
         self.service.save_preferences({"login_tyys": "confirmed", "speed": "5.2"})

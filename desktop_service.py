@@ -180,7 +180,7 @@ class DesktopService:
                 else:
                     self.message(line)
             code = process.wait()
-            if code and not self.stopping:
+            if code:
                 raise RuntimeError(f"任务退出码 {code}，请查看运行日志。")
             return code
         finally:
@@ -252,8 +252,6 @@ class DesktopService:
     def _perform(self, action, values):
         backend = self.settings["backend"]
         key = values.get("app", self.settings["app"])
-        if backend == "ios" and action in ("run", "mount") and not self.is_admin():
-            raise RuntimeError("iOS 定位需要管理员权限，请点击“以管理员权限重新打开”。")
         if action == "check":
             if backend == "android":
                 self._inventory(self._device())

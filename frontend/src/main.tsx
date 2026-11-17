@@ -47,7 +47,6 @@ function App(){
     {error&&<div className="error-banner" role="alert"><CircleHelp size={17}/><span>{error}</span><button aria-label="关闭提示" onClick={()=>setError('')}><X size={16}/></button></div>}
     {!connected&&snapshot&&<div className="connection-banner">与本机服务的连接已中断，正在重新连接；当前显示的是最后收到的位置。</div>}
     {stale&&<div className="connection-banner">已经超过 3 秒没有收到新位置，轨迹保持在最后一个已确认坐标。</div>}
-    {!android&&!snapshot.capabilities?.admin&&<div className="connection-banner">iOS 定位需要管理员权限。<button className="button" disabled={busy} onClick={()=>action('elevate')}>以管理员权限重新打开</button></div>}
     {(standalone||page==='workbench')&&<div className="workspace">
       {!standalone&&<aside className="run-sidebar">
         <div className="field"><label>设备类型</label><div className="segmented"><button disabled={busy} className={android?'active':''} onClick={()=>edit('backend','android')}>Android</button><button disabled={busy} className={!android?'active':''} onClick={()=>edit('backend','ios')}>iPhone</button></div></div>

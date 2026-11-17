@@ -40,6 +40,7 @@ hiddenimports.extend((
     "pymobiledevice3.remote.remote_service_discovery",
     "pymobiledevice3.remote.common",
     "pymobiledevice3.remote.tunnel_service",
+    "pymobiledevice3.remote.userspace_tunnel",
     "pymobiledevice3.services.amfi",
     "pymobiledevice3.services.mobile_image_mounter",
     "pymobiledevice3.services.dvt.instruments.location_simulation",

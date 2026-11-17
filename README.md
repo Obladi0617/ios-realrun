@@ -6,6 +6,13 @@
 
 Android 模式使用 Android SDK 的 ADB 与模拟器控制台，不需要连接 iPhone。它运行的是 Android APK，不是 iOS 应用。
 
+### v1.4.4
+
+- 修复 iPhone 启动时先经旧 USB 连接挂载镜像，导致 iOS 27 报 `RSDRequiredError` 的问题。挂载与定位均使用指定设备的 USB RSD 用户态隧道，普通权限即可运行。
+- 先实际打开定位开发者服务；服务已可用时不再重复安装镜像。需要安装时通过 RSD 挂载，随后重新发现服务。
+- 停止时先清除模拟定位、关闭定位通道，再释放隧道；清除失败会明确报错。
+- 当前 USB 通道支持 iOS 17.4 及更新版本；已在 iOS 27.2.1 上验证短时路线推送和停止清理。
+
 ### v1.4.3
 
 - 桌面版新建设置与命令行默认目标配速改为 5:00/km，对应约 3.3333 m/s、12 km/h。
@@ -34,7 +41,7 @@ Android 模式使用 Android SDK 的 ADB 与模拟器控制台，不需要连接
 - 登录会话保留在固定 AVD 内；桌面端只保存用户确认登录的时间，不接收学号、手机号或密码。用户确认与 App 内定位验证分别显示。
 - Android 模式按普通权限运行，iOS 模式提供管理员重启入口。关闭主窗口前先停止定位任务，单独关闭路径窗口不会结束任务。
 
-构建后的桌面入口是 `dist\v1.4.3\iOSRealRun\iOSRealRun.exe`，同目录的 `_internal` 和 worker 需完整保留。
+构建后的桌面入口是 `dist\v1.4.4\iOSRealRun\iOSRealRun.exe`，同目录的 `_internal` 和 worker 需完整保留。
 
 ### v1.3.0
 
@@ -63,12 +70,12 @@ Android 模式使用 Android SDK 的 ADB 与模拟器控制台，不需要连接
 | 开发者模式 | 设备上开启一次即可长期生效（设置 → 隐私与安全性 → 开发者模式） |
 | 数据线     | 连接后设备需解锁并点击“信任此电脑”                             |
 | 亮屏       | 运行期间设备需保持解锁亮屏，建议把自动锁定设为“永不”           |
-| 管理员权限 | iOS 定位时需要，可点击管理员重启；Android 模式无需管理员权限  |
+| iOS 版本   | 17.4 或更新版本，使用普通权限 USB RSD 通道                     |
 | 设备数量   | 同时只连接一台 iOS 设备                                        |
 
 ### 使用步骤
 
-1. 打开 **iOS RealRun**，在工作台选择 iPhone；根据提示以管理员权限重新打开
+1. 打开 **iOS RealRun**，在工作台选择 iPhone
 2. 用数据线连接设备，解锁并点击“信任此电脑”
 3. 点击 **检查设备** 确认连接正常
 4. 选择路线、速度、运行时长和配速波动档位
@@ -77,7 +84,7 @@ Android 模式使用 Android SDK 的 ADB 与模拟器控制台，不需要连接
 
 > 关闭应用会自动清除模拟定位并恢复真实 GPS。若异常退出未恢复，重启设备即可。
 >
-> 运行日志位于 `%TEMP%\ios-realrun-gui.log`，反馈问题时可直接提供该文件。
+> 桌面工作台日志位于 `%LOCALAPPDATA%\iOSRealRun\desktop.log`，反馈问题时可提供该文件。
 
 ### Android 模拟器与 APK
 
@@ -168,15 +175,15 @@ CLI 调试模式复用真实控制器与前端资源，不创建窗口：
 | -------- | ---------------------- |
 | 操作系统 | macOS, Windows 11      |
 | Python   | 3.11+                  |
-| iOS      | 17+，已验证 iOS 26.3.1 |
+| iOS      | 17.4+，已验证 iOS 27.2.1 |
 
 ## 前置准备
 
 1. **Windows 需要安装 iTunes**（提供设备通信驱动）
-2. iOS 设备系统版本 ≥ 17，已验证 iOS 26.3.1
+2. iOS 设备系统版本 ≥ 17.4，已验证 iOS 27.2.1
 3. 源码运行需要 Python 3.11+；使用 Windows 安装包无需安装 Python
 4. **只能有一台 iOS 设备连接电脑**
-5. 需要管理员/root 权限（创建 tun 设备）
+5. 使用普通权限 USB RSD 用户态隧道，无需管理员/root 权限
 
 ## 快速开始
 
@@ -193,12 +200,12 @@ pip install -r requirements.txt
 ### 3. 挂载 Developer Disk Image
 
 ```bash
-pymobiledevice3 mounter auto-mount
+python worker.py --mount
 ```
 
 ### 4. 运行
 
-**Windows（管理员权限）：**
+**Windows（普通 PowerShell）：**
 
 ```powershell
 python main.py
@@ -207,7 +214,7 @@ python main.py
 **macOS：**
 
 ```bash
-sudo python3 main.py
+python3 main.py
 ```
 
 ### 5. 退出
@@ -361,7 +368,7 @@ GUI 提供四种配速档位：
 .\build_windows.ps1
 ```
 
-脚本会生成 `dist\installer\iOS-RealRun-Setup.exe`。安装后从桌面 **iOS RealRun** 快捷方式启动，首次运行请在 UAC 提示中允许管理员权限。
+脚本会生成 `dist\v1.4.4\installer\iOS-RealRun-Setup.exe`。安装后从桌面 **iOS RealRun** 快捷方式启动。
 
 ---
 
@@ -417,7 +424,7 @@ GUI 提供四种配速档位：
    新电脑需要能访问 `api.github.com` 与 Apple 的 `gs.apple.com`（用于获取个性化授权票据）。
 
 4. **确认前置条件**
-   - 以管理员权限运行（UAC 点"是"）
+   - 使用 iOS 17.4 或更新版本，通过 USB 连接
    - 已安装 iTunes（Apple Mobile Device 服务）
    - 设备已解锁并信任此电脑，且已开启开发者模式
 
