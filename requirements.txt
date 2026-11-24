@@ -1,4 +1,4 @@
-pymobiledevice3>=11.49.1
+pymobiledevice3>=11.61.1
 PyYAML>=6.0.1
 geopy>=2.4.1
 pywebview>=6,<7
