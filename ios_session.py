@@ -107,9 +107,8 @@ async def mount_image():
         await mount_connected(rsd)
 
 
-async def run_ios(loc, speed, duration_seconds=None, variation=None):
-    from run import run_on_provider
-
+@asynccontextmanager
+async def developer_provider():
     serial = await device_serial()
     print("正在准备设备和开发者镜像...", flush=True)
     async with device_tunnel(serial) as rsd:
@@ -117,4 +116,19 @@ async def run_ios(loc, speed, duration_seconds=None, variation=None):
     # Discover services again after mounting: the first handshake may precede DVT startup.
     # The second tunnel stays alive until clear() and both DTX contexts have closed.
     async with device_tunnel(serial) as rsd:
+        yield rsd
+
+
+async def run_ios(loc, speed, duration_seconds=None, variation=None):
+    from run import run_on_provider
+
+    async with developer_provider() as rsd:
         await run_on_provider(rsd, loc, speed, duration_seconds, variation)
+
+
+async def hold_ios(point_file):
+    from fixed_location import hold_point
+    from run import ios_location
+
+    async with developer_provider() as rsd, ios_location(rsd) as location:
+        await hold_point(location.set, point_file)

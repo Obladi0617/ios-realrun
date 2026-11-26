@@ -9,6 +9,7 @@ import time
 import random
 import asyncio
 from bisect import bisect_right
+from contextlib import asynccontextmanager
 
 from geopy.distance import geodesic
 
@@ -416,17 +417,23 @@ async def run(address, port, loc: list, v, d=15, duration_seconds=None, variatio
         await run_on_provider(rsd, loc, v, duration_seconds, variation)
 
 
-async def run_on_provider(rsd, loc, v, duration_seconds=None, variation=None):
+@asynccontextmanager
+async def ios_location(rsd):
     from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
     from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 
     async with DvtProvider(rsd) as dvt:
         async with LocationSimulation(dvt) as loc_sim:
             try:
-                await follow_route(loc_sim, loc, v, duration_seconds, variation)
+                yield loc_sim
             finally:
                 try:
                     await asyncio.wait_for(loc_sim.clear(), timeout=5)
                     print("已恢复真实定位", flush=True)
                 except Exception as error:
                     raise RuntimeError(f"清除模拟定位失败，请解锁并重新连接设备：{error}") from error
+
+
+async def run_on_provider(rsd, loc, v, duration_seconds=None, variation=None):
+    async with ios_location(rsd) as loc_sim:
+        await follow_route(loc_sim, loc, v, duration_seconds, variation)

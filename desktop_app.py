@@ -13,7 +13,7 @@ import sys
 import threading
 import time
 
-from app_info import APP_VERSION
+from app_info import APP_VERSION, GITHUB_REPOSITORY
 from app_settings import data_dir
 from desktop_service import DesktopService, ROOT
 from desktop_server import DesktopServer
@@ -138,6 +138,7 @@ def main():
 
             service.pick_file = choose_apk
             webview.start(gui="edgechromium" if sys.platform == "win32" else None, private_mode=True,
+                          user_agent=f"RealRun/{APP_VERSION} (+https://github.com/{GITHUB_REPOSITORY})",
                           storage_path=str(data_dir() / "webview"))
     except KeyboardInterrupt:
         pass

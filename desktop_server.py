@@ -9,6 +9,8 @@ import secrets
 import threading
 import urllib.parse
 
+from map_search import search_places
+
 
 class DesktopServer:
     def __init__(self, service, assets, port=0):
@@ -48,11 +50,15 @@ class DesktopServer:
                             payload = outer.service.snapshot(int(query.get("cursor", [0])[0]), query.get("run", [""])[0], int(query.get("logs", [0])[0]))
                         elif parsed.path == "/api/route":
                             payload = outer.service.route(query.get("name", [outer.service.settings["route"]])[0])
+                        elif parsed.path == "/api/place-search":
+                            payload = {"places": search_places(query.get("q", [""])[0])}
                         else:
                             return self.reply(404, {"error": "接口不存在。"})
                         return self.reply(200, payload)
                     except (ValueError, OSError) as error:
                         return self.reply(400, {"error": str(error)})
+                    except RuntimeError as error:
+                        return self.reply(502, {"error": str(error)})
                 relative = urllib.parse.unquote(parsed.path).lstrip("/") or "index.html"
                 path = (outer.assets / relative).resolve()
                 if not path.is_relative_to(outer.assets) or not path.is_file():

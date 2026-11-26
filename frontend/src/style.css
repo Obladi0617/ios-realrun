@@ -5,3 +5,71 @@
 @media(max-width:1050px){.app-header{gap:32px;padding:0 22px}.run-sidebar{width:193px;padding:23px 17px}.work-main{padding:24px}.run-metrics{gap:35px}.page-content{padding:30px}.settings-section{gap:30px;grid-template-columns:210px minmax(0,1fr)}}
 @media(max-width:760px){.app-header{height:auto;min-height:67px;flex-wrap:wrap;gap:18px;padding:16px 20px}.app-header nav{order:3;width:100%;gap:27px;height:40px}.header-state{font-size:11px}.workspace{flex-direction:column}.run-sidebar{width:100%;border-right:0;border-bottom:1px solid var(--line);display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:20px}.field{margin-bottom:0}.sidebar-actions{grid-column:span 2;flex-wrap:nowrap}.sidebar-actions .button{flex:1}.work-main{padding:20px}.work-heading h1{font-size:24px}.run-metrics{gap:30px;flex-wrap:wrap}.run-metrics strong{font-size:25px}.run-metrics .metric-detail{display:none}.map-canvas{height:390px}.map-legend{gap:13px}.follow-control{margin-left:0}.page-content{padding:23px}.page-heading{align-items:flex-start;gap:18px}.page-heading h1{font-size:25px}.app-entry{flex-wrap:wrap;gap:16px}.app-info{flex-basis:calc(100% - 80px)}.app-entry>.button{margin-left:71px}.apps-bottom{flex-direction:column;align-items:flex-start}.settings-section{grid-template-columns:1fr;gap:25px}.status-device{display:none}.task-status{max-width:80%}.status-footer{gap:12px}.status-footer>.quiet-button{margin-left:auto}.map-actions{gap:4px}.map-section.map-expanded{inset:7px;padding:15px}.run-detail{font-size:11px;gap:8px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+.point-workspace {
+  display: grid;
+  grid-template-columns: minmax(242px, 284px) minmax(0, 1fr);
+  flex: 1;
+  gap: 24px;
+  padding: 26px 28px;
+}
+.point-inspector { min-width: 0; padding: 4px 8px 0 0; }
+.point-heading { padding-bottom: 20px; border-bottom: 1px solid var(--line); margin-bottom: 20px; }
+.point-heading h1 { margin: 0 0 6px; font-size: 25px; }
+.point-heading p { margin: 0; color: var(--muted); line-height: 1.6; }
+.point-device, .point-search-row { display: flex; gap: 7px; align-items: stretch; }
+.point-device select, .point-search-row input { min-width: 0; flex: 1; }
+.point-search label { display: block; margin-bottom: 7px; color: #bdcad7; }
+.point-search-row input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 9px;
+  background: var(--panel);
+  color: inherit;
+  font: inherit;
+}
+.point-search .field-hint a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.point-search p { margin: 10px 0 0; line-height: 1.45; color: var(--muted); }
+.point-search p[role="alert"] { color: #f1a8a0; }
+.point-results { margin: 10px 0 0; padding: 0; list-style: none; max-height: 222px; overflow: auto; }
+.point-results button {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 3px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background .15s;
+}
+.point-results button:hover { background: var(--panel); }
+.point-results button svg { flex: none; margin-top: 2px; color: var(--accent); }
+.point-selection { display: grid; gap: 9px; margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--line); }
+.point-status { font-weight: 600; }
+.point-coordinates { font: 12px/1.4 ui-monospace, Consolas, monospace; color: var(--muted); }
+.point-selection .button { justify-content: center; }
+.point-map { position: relative; min-height: 520px; min-width: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.point-map-canvas { position: absolute; inset: 0; background: #a8cbd4; cursor: crosshair; }
+.point-map-warning {
+  position: absolute;
+  z-index: 1000;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--muted);
+}
+@media (max-width: 760px) {
+  .point-workspace { grid-template-columns: minmax(0, 1fr); gap: 15px; padding: 16px; }
+  .point-inspector { padding: 0; }
+  .point-map { min-height: 430px; }
+}

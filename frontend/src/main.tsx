@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { Activity, ArrowDownToLine, ArrowRight, Check, CheckCheck, CircleHelp, ClipboardCheck, Clock3, Download, Gauge, HardDrive, LoaderCircle, MapPinned, Play, RefreshCw, Route, Settings2, ShieldCheck, Smartphone, Square, Terminal, X } from 'lucide-react'
+import { Activity, ArrowDownToLine, ArrowRight, Check, CheckCheck, CircleHelp, ClipboardCheck, Clock3, Download, Gauge, HardDrive, LoaderCircle, MapPin, MapPinned, Play, RefreshCw, Route, Settings2, ShieldCheck, Smartphone, Square, Terminal, X } from 'lucide-react'
 import { api, type Fix, type Settings, type Snapshot } from './api'
 import { MapView } from './MapView'
+import { PointLocation } from './PointLocation'
 import './style.css'
 
 const names:Record<string,string>={
@@ -17,7 +18,7 @@ function paceLabel(speed:number){if(!Number.isFinite(speed)||speed<.1)return '�
 const initialParams=new URLSearchParams(location.search)
 
 function App(){
-  const [page,setPage]=useState<'workbench'|'apps'|'settings'>('workbench'),[snapshot,setSnapshot]=useState<Snapshot|null>(null),[settings,setSettings]=useState<Settings|null>(null)
+  const [page,setPage]=useState<'workbench'|'point'|'apps'|'settings'>('workbench'),[snapshot,setSnapshot]=useState<Snapshot|null>(null),[settings,setSettings]=useState<Settings|null>(null)
   const [points,setPoints]=useState<Fix[]>([]),[logs,setLogs]=useState<Snapshot['logs']>([]),[error,setError]=useState(''),[connected,setConnected]=useState(false),[showLogs,setShowLogs]=useState(false),[saved,setSaved]=useState(false),[sending,setSending]=useState(false)
   const polling=useRef({cursor:0,run:'',logs:0}),dirty=useRef(false),mounted=useRef(true),lastSettings=useRef('')
   const standalone=initialParams.get('view')==='map'
@@ -36,7 +37,7 @@ function App(){
   const save=useCallback(async()=>{if(!settings)return;await api.save(settings);dirty.current=false;lastSettings.current=JSON.stringify(settings);setSaved(true)},[settings])
   async function action(name:string,values:Record<string,unknown>={}){
     setError('');setSending(true)
-    try{if(dirty.current&&name!=='stop'&&name!=='phone_hide')await save();await api.action(name,values)}catch(caught){setError((caught as Error).message)}finally{if(mounted.current)setSending(false)}
+    try{if(dirty.current&&!['stop','phone_hide','point_move'].includes(name))await save();await api.action(name,values)}catch(caught){setError((caught as Error).message)}finally{if(mounted.current)setSending(false)}
   }
   async function saveOnly(){setError('');try{await save()}catch(caught){setError((caught as Error).message)}}
   if(!snapshot||!settings)return <div className="loading"><Route size={25}/><span>正在连接本机工作台…</span>{error&&<p role="alert">{error}</p>}</div>
@@ -45,10 +46,10 @@ function App(){
   const liveRoute=running&&snapshot.run.route?snapshot.run.route:settings.route
   const last=points.at(-1),stale=running&&snapshot.run.lastFixAt&&Date.now()/1000-snapshot.run.lastFixAt>3
   const update=snapshot.update
-  const status=!connected?'连接中断':stale?'位置更新中断':snapshot.stopping?'正在停止':running?'正在定位':snapshot.task.status==='error'?'操作失败':snapshot.device.status==='ready'?'设备已就绪':'等待设备'
+  const status=!connected?'连接中断':stale?'位置更新中断':snapshot.stopping?'正在停止':snapshot.point.status==='active'?'定点定位中':running?'正在定位':snapshot.task.status==='error'?'操作失败':snapshot.device.status==='ready'?'设备已就绪':'等待设备'
   const phoneButton=<button className="button" disabled={sending||!android} onClick={()=>action(snapshot.phone.status==='open'?'phone_hide':'phone_show')}><Smartphone size={16}/>{snapshot.phone.status==='open'?'收起手机':'显示手机'}</button>
   return <div className={`app-shell ${standalone?'map-only':''}`} data-connected={connected} data-point-count={snapshot.run.pointCount} data-run-id={snapshot.run.id}>
-    {!standalone&&<header className="app-header"><div className="brand"><Route size={23}/><strong>RealRun</strong><span>v{snapshot.version}</span></div><nav aria-label="主导航">{([{key:'workbench',label:'工作台',icon:MapPinned},{key:'apps',label:'应用',icon:Smartphone},{key:'settings',label:'设置',icon:Settings2}] as const).map(item=><button key={item.key} className={page===item.key?'active':''} onClick={()=>setPage(item.key)}><item.icon size={16}/>{item.label}</button>)}</nav><div className="header-state"><i className={`status-dot ${!connected||snapshot.task.status==='error'?'warning':''}`}/>{status}</div></header>}
+    {!standalone&&<header className="app-header"><div className="brand"><Route size={23}/><strong>RealRun</strong><span>v{snapshot.version}</span></div><nav aria-label="主导航">{([{key:'workbench',label:'工作台',icon:MapPinned},{key:'point',label:'定点定位',icon:MapPin},{key:'apps',label:'应用',icon:Smartphone},{key:'settings',label:'设置',icon:Settings2}] as const).map(item=><button key={item.key} className={page===item.key?'active':''} onClick={()=>setPage(item.key)}><item.icon size={16}/>{item.label}</button>)}</nav><div className="header-state"><i className={`status-dot ${!connected||snapshot.task.status==='error'?'warning':''}`}/>{status}</div></header>}
     {error&&<div className="error-banner" role="alert"><CircleHelp size={17}/><span>{error}</span><button aria-label="关闭提示" onClick={()=>setError('')}><X size={16}/></button></div>}
     {!connected&&snapshot&&<div className="connection-banner">与本机服务的连接已中断，正在重新连接；当前显示的是最后收到的位置。</div>}
     {stale&&<div className="connection-banner">已经超过 3 秒没有收到新位置，轨迹保持在最后一个已确认坐标。</div>}
@@ -69,6 +70,7 @@ function App(){
         <div className="run-detail"><span>{last?`${last.latitude.toFixed(6)}, ${last.longitude.toFixed(6)}`:'等待第一个位置'}</span><span data-testid="fix-count">{snapshot.run.pointCount} 次位置更新</span><span>{snapshot.run.status==='stopped'?'坐标推送已停止，轨迹已保留':running?'按已确认发送的位置更新':'轨迹仅在定位任务运行时更新'}</span></div>
       </main>
     </div>}
+    {!standalone&&page==='point'&&<PointLocation backend={settings.backend} snapshot={snapshot} disabled={!connected||sending} onBackend={value=>edit('backend',value)} onAction={action}/>}
     {!standalone&&page==='apps'&&<main className="page-content apps-page"><div className="page-heading"><div><span className="eyebrow">固定虚拟手机 · 保留应用数据</span><h1>应用与登录</h1><p>在官方 App 中完成登录，后续打开同一台虚拟手机继续使用。</p></div><button className="button" disabled={busy} onClick={()=>action('check')}><RefreshCw size={15}/>刷新应用</button></div>
       <div className="app-list">{Object.entries(apps).map(([key,app])=>{const info=snapshot.apps[key];return <section className="app-entry" key={key}><div className="app-avatar">{app.monogram}</div><div className="app-info"><h2>{app.name}</h2><div className="app-metadata">{info.installed===null?'等待检查':info.installed?`已安装 · ${info.version}`:'尚未安装'}<span>·</span>{info.confirmedAt?'上次登录已由你确认':'首次登录待确认'}</div><p>{app.description}</p><div className="app-inline-actions"><button className="text-button" disabled={busy} onClick={()=>action('confirm_login',{app:key})}><CheckCheck size={14}/>我已完成登录</button>{info.confirmedAt&&<button className="text-button" disabled={busy} onClick={()=>action('confirm_login',{app:key,confirmed:false})}>清除确认状态</button>}<button className="text-button" disabled={busy} onClick={()=>action('update_app',{app:key})}><ArrowDownToLine size={14}/>安装官方最新版</button></div></div><button className="button primary" disabled={busy||!android} onClick={()=>action('open_app',{app:key})}>{info.installed?'打开 / 登录':'安装并打开'}<ArrowRight size={15}/></button></section>})}</div>
       {!android&&<div className="inline-note">应用管理使用 Android 虚拟手机，请在工作台切换到 Android 模式。</div>}

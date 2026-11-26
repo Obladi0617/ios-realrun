@@ -21,6 +21,7 @@ from android_workspace import app_inventory, ensure_device, open_app, restart_de
 from android_performance import GRAPHICS_MODES, MIRROR_VIDEO_OPTIONS
 from desktop_tools import APPS, download_app, ensure_scrcpy
 from external_process import external_popen, external_run
+from fixed_location import validate_point, write_point
 from session_control import RunStopped, STOP_FILE_ENV, raise_if_stopped
 from telemetry import PREFIX
 
@@ -43,6 +44,7 @@ class DesktopService:
         self.lock = threading.RLock()
         self.thread = self.process = self.mirror = self.phone_thread = None
         self.stop_flag = None
+        self.point_file = None
         self.stopping = self.closing = False
         self.log_sequence = 0
         self.logs = deque(maxlen=400)
@@ -54,6 +56,7 @@ class DesktopService:
             "phone": {"status": "closed"},
             "update": {"status": "idle"},
             "run": {"id": "", "status": "idle", "cursor": 0, "pointCount": 0, "distance": 0, "elapsed": 0, "speed": 0, "reason": ""},
+            "point": {"status": "idle", "target": None, "applied": None},
         }
         self.pick_file = None
         self.request_close = None
@@ -135,7 +138,21 @@ class DesktopService:
 
     def _consume_event(self, event):
         with self.lock:
-            if event.get("type") == "location":
+            if event.get("type") == "point_set":
+                state = self.state["point"]
+                if state["status"] not in ("starting", "active"):
+                    return
+                try:
+                    revision = int(event["revision"])
+                    point = validate_point(event["latitude"], event["longitude"])
+                except (KeyError, TypeError, ValueError, OverflowError):
+                    return
+                previous = state["applied"]["revision"] if state["applied"] else 0
+                if previous < revision <= state["target"]["revision"]:
+                    state.update(status="active", applied={**point, "revision": revision})
+                    if not self.stopping:
+                        self.state["task"]["label"] = "正在定点定位"
+            elif event.get("type") == "location":
                 try:
                     fields = {key: float(event[key]) for key in ("latitude", "longitude", "distance", "elapsed", "speed")}
                     sequence = int(event["sequence"])
@@ -264,14 +281,18 @@ class DesktopService:
             if backend != "ios":
                 raise ValueError("Android 模拟器不需要挂载开发者镜像。")
             self._worker(["--mount"])
-        elif action == "run":
-            arguments = ["--run", "--route", self.settings["route"], "--speed", self.settings["speed"], "--minutes", self.settings["minutes"], "--profile", self.settings["profile"]]
+        elif action in ("run", "point_start"):
+            if action == "point_start":
+                arguments = ["--hold-point", str(self.point_file)]
+            else:
+                arguments = ["--run", "--route", self.settings["route"], "--speed", self.settings["speed"], "--minutes", self.settings["minutes"], "--profile", self.settings["profile"]]
             if backend == "android":
                 device = self._device()
                 arguments.extend(("--backend", "android", "--sdk", str(Path(device.adb).parent.parent), "--serial", device.serial))
             self._worker(arguments)
-            with self.lock:
-                self.state["run"]["status"] = "stopped"
+            if action == "run":
+                with self.lock:
+                    self.state["run"]["status"] = "stopped"
         elif action in ("prepare_app", "open_app", "update_app", "install_apk"):
             if backend != "android":
                 raise ValueError("应用与手机窗口功能请切换到 Android 模式。")
@@ -350,6 +371,16 @@ class DesktopService:
             raise ValueError("操作参数无效。")
         if action == "stop":
             return self.stop()
+        if action == "point_move":
+            point = validate_point(values.get("latitude"), values.get("longitude"))
+            with self.lock:
+                state = self.state["point"]
+                if self.closing or self.stopping or self.point_file is None or state["status"] not in ("starting", "active"):
+                    raise ValueError("请先开始定点定位。")
+                target = {**point, "revision": state["target"]["revision"] + 1}
+                write_point(self.point_file, target)
+                state["target"] = target
+            return {"ok": True}
         if action == "phone_hide":
             return self.hide_phone()
         if action in ("map_window", "elevate"):
@@ -384,12 +415,19 @@ class DesktopService:
             if key not in APPS:
                 raise ValueError("未知应用。")
             return self.save_preferences({"login_" + key: datetime.now(timezone.utc).isoformat() if values.get("confirmed", True) else ""})
-        allowed = {"check", "mount", "run", "prepare_app", "open_app", "update_app", "install_apk", "phone_show", "prepare_phone", "restart_phone", "check_update", "download_update", "install_update"}
+        allowed = {"check", "mount", "run", "point_start", "prepare_app", "open_app", "update_app", "install_apk", "phone_show", "prepare_phone", "restart_phone", "check_update", "download_update", "install_update"}
         if action not in allowed:
             raise ValueError("未知操作。")
         with self.lock:
             if self.closing or self.thread is not None and self.thread.is_alive():
                 raise ValueError("已有任务正在进行，请先停止或等待完成。")
+            if action == "point_start":
+                point = validate_point(values.get("latitude"), values.get("longitude"))
+                target = {**point, "revision": 1}
+                point_file = self.storage / ("point-" + uuid.uuid4().hex + ".json")
+                write_point(point_file, target)
+                self.point_file = point_file
+                self.state["point"] = {"status": "starting", "target": target, "applied": None}
             self.stopping = False
             self.stop_flag = self.storage / ("stop-" + uuid.uuid4().hex + ".flag")
             self.state["task"] = {"status": "busy", "label": "正在准备…", "action": action}
@@ -404,27 +442,37 @@ class DesktopService:
                     self._perform(action, values)
                     with self.lock:
                         self.state["task"].update(status="stopped" if self.stopping else "success", label="已停止" if self.stopping else "操作完成")
+                        if action == "point_start":
+                            self.state["point"]["status"] = "stopped"
                 except RunStopped:
                     with self.lock:
                         self.state["task"].update(status="stopped", label="已停止")
                         if action == "run":
                             self.state["run"].update(status="stopped", reason="stopped", speed=0.0)
+                        elif action == "point_start":
+                            self.state["point"]["status"] = "stopped"
                 except Exception as error:
                     self.message(str(error))
                     with self.lock:
                         self.state["task"].update(status="error", label=str(error))
                         if action == "run":
                             self.state["run"].update(status="error", reason=str(error), speed=0.0)
+                        elif action == "point_start":
+                            self.state["point"]["status"] = "error"
                         if action in ("check", "restart_phone"):
                             self.state["device"].update(status="error", label=str(error))
                 finally:
                     self.stop_flag.unlink(missing_ok=True)
+                    if action == "point_start" and self.point_file is not None:
+                        self.point_file.unlink(missing_ok=True)
                     for key, value in previous.items():
                         if value is None:
                             os.environ.pop(key, None)
                         else:
                             os.environ[key] = value
                     with self.lock:
+                        if action == "point_start":
+                            self.point_file = None
                         self.stopping = False
 
             self.thread = threading.Thread(target=work, name="realrun-job", daemon=True)

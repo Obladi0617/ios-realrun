@@ -1,5 +1,8 @@
 export type Settings = {backend:string;route:string;speed:string;minutes:string;profile:string;sdk:string;serial:string;avd:string;app:string;android_home:string;android_gpu:string;scrcpy:string;login_tyys:string;login_ding:string}
 export type Fix = {sequence:number;latitude:number;longitude:number;distance:number;elapsed:number;speed:number}
+export type GeoPoint = {latitude:number;longitude:number}
+export type Place = GeoPoint & {label:string}
+type PointRevision = GeoPoint & {revision:number}
 export type AppInfo = {name:string;installed:boolean|null;version:string;confirmedAt?:string}
 export type Snapshot = {
   version:string; settings:Settings; busy:boolean; stopping:boolean;
@@ -8,6 +11,7 @@ export type Snapshot = {
   update:{status:string;version?:string;path?:string};
   capabilities?:{nativeWindows:boolean;admin:boolean};
   run:{id:string;status:string;cursor:number;reset:boolean;points:Fix[];pointCount:number;distance:number;elapsed:number;speed:number;reason:string;route?:string;lastFixAt?:number};
+  point:{status:string;target:PointRevision|null;applied:PointRevision|null};
   logs:{id:number;text:string;time:string}[];logCursor:number
 }
 const fragment = new URLSearchParams(location.hash.slice(1))
@@ -24,4 +28,5 @@ export const api={
   action:(action:string,values:Record<string,unknown>={})=>request<{ok:boolean}>('/api/action',{action,values}),
   save:(settings:Partial<Settings>)=>request<{settings:Settings}>('/api/settings',settings),
   route:(name:string)=>request<{coordinates:[number,number][]}>(`/api/route?name=${encodeURIComponent(name)}`),
+  search:(query:string)=>request<{places:Place[]}>(`/api/place-search?q=${encodeURIComponent(query)}`),
 }

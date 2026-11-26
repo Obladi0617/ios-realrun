@@ -270,12 +270,12 @@ class EmulatorLocation:
             except OSError:
                 pass
 
-    async def set(self, latitude, longitude):
+    async def set(self, latitude, longitude, *, stationary=False):
         if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
             raise ValueError("定位坐标超出有效范围。")
         now = self.clock()
         speed = 0.0
-        if self.last_fix is not None and now > self.last_fix_time:
+        if not stationary and self.last_fix is not None and now > self.last_fix_time:
             old_latitude, old_longitude = self.last_fix
             lat1, lat2 = math.radians(old_latitude), math.radians(latitude)
             dlat = lat2 - lat1

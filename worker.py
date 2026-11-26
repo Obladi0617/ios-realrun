@@ -68,6 +68,14 @@ async def android_action(args):
         print("APK 安装完成。请在模拟器内打开应用并登录。", flush=True)
     elif args.check:
         print("Android 模拟器已就绪：" + await asyncio.to_thread(device.check), flush=True)
+    elif args.hold_point:
+        from functools import partial
+        from android_emulator import EmulatorLocation
+        from fixed_location import hold_point
+
+        serial = await asyncio.to_thread(device.check)
+        async with EmulatorLocation(serial) as location:
+            await hold_point(partial(location.set, stationary=True), args.hold_point)
     elif args.run:
         import config
         from util.route import load_route
@@ -94,6 +102,7 @@ def main():
     actions.add_argument("--check", action="store_true")
     actions.add_argument("--mount", action="store_true")
     actions.add_argument("--run", action="store_true")
+    actions.add_argument("--hold-point", type=Path, help=argparse.SUPPRESS)
     actions.add_argument("--list-android", action="store_true")
     actions.add_argument("--start-emulator", action="store_true")
     actions.add_argument("--install-apk", metavar="APK")
@@ -126,6 +135,9 @@ def main():
         elif args.mount:
             from ios_session import run_async
             run_async(mount_image())
+        elif args.hold_point:
+            from ios_session import hold_ios, run_async
+            run_async(hold_ios(args.hold_point))
         elif args.run:
             run_main(args)
         else:

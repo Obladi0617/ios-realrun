@@ -1,2 +1,2 @@
-APP_VERSION = "1.4.5"
+APP_VERSION = "1.5.0"
 GITHUB_REPOSITORY = "Obladi0617/Realrun"

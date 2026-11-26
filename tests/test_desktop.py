@@ -75,6 +75,34 @@ class DesktopStateTests(unittest.TestCase):
         self.assertEqual(self.service.state["device"]["status"], "error")
         self.assertEqual(self.service.state["task"]["status"], "error")
 
+    def test_moving_a_point_keeps_one_job_and_stop_cleans_its_target_file(self):
+        started, released = threading.Event(), threading.Event()
+
+        def hold(*_):
+            started.set()
+            released.wait(3)
+
+        with patch.object(self.service, "_perform", side_effect=hold) as job:
+            self.service.dispatch("point_start", {"latitude": 48.85, "longitude": 2.35})
+            try:
+                self.assertTrue(started.wait(1))
+                path = self.service.point_file
+                self.service.dispatch("point_move", {"latitude": 35.68, "longitude": 139.76})
+                target = json.loads(path.read_text(encoding="utf-8"))
+                self.assertEqual(target, {"latitude": 35.68, "longitude": 139.76, "revision": 2})
+                self.service._consume_event({"type": "point_set", **target})
+                self.service._consume_event({"type": "point_set", "latitude": 48.85, "longitude": 2.35, "revision": 1})
+                self.assertEqual(self.service.snapshot()["point"]["applied"], target)
+                with self.assertRaisesRegex(ValueError, "任务"):
+                    self.service.dispatch("run")
+                self.service.stop()
+            finally:
+                released.set()
+                self.service.thread.join(2)
+        job.assert_called_once()
+        self.assertFalse(path.exists())
+        self.assertEqual(self.service.snapshot()["point"]["status"], "stopped")
+
     def test_iphone_mount_and_run_are_allowed_without_administrator(self):
         self.service.settings["backend"] = "ios"
         with patch.object(self.service, "is_admin", return_value=False), \
