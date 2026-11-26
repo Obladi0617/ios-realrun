@@ -39,10 +39,10 @@ async def start_tunnel():
 def run_main(args):
     import config
     from ios_session import run_async, run_ios
-    from util.route import parse_route
+    from util.route import load_route
 
     route_path = (Path(__file__).resolve().parent / args.route).resolve()
-    loc = parse_route(route_path.read_text(encoding="utf-8"))
+    loc = load_route(route_path)
     variation = apply_profile(getattr(config.config, "speedVariation", {}), args.profile)
     duration = args.minutes * 60 if args.minutes > 0 else None
     run_async(run_ios(loc, args.speed, duration, variation))
@@ -70,10 +70,10 @@ async def android_action(args):
         print("Android 模拟器已就绪：" + await asyncio.to_thread(device.check), flush=True)
     elif args.run:
         import config
-        from util.route import parse_route
+        from util.route import load_route
 
         route_path = (Path(__file__).resolve().parent / args.route).resolve()
-        loc = parse_route(route_path.read_text(encoding="utf-8"))
+        loc = load_route(route_path)
         variation = apply_profile(getattr(config.config, "speedVariation", {}), args.profile)
         await run_android(loc, args.speed, args.minutes, variation, args.sdk, args.serial)
     else:

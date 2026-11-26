@@ -1,8 +1,9 @@
+from pathlib import Path
+
 import config
 
-from util import route
+from util.route import load_route
+
 
 def get_route():
-    with open(config.config.routeConfig) as myFile:
-        loc = route.parse_route(myFile.read())
-    return loc  
+    return load_route(Path(config.config.routeConfig))

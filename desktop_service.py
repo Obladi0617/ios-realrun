@@ -128,9 +128,9 @@ class DesktopService:
     def route(self, name):
         if name not in ROUTES:
             raise ValueError("未知路线。")
-        from run import bd09Towgs84
-        from util.route import parse_route
-        positions = [bd09Towgs84(point) for point in parse_route((ROOT / name).read_text(encoding="utf-8"))]
+        from run import route_wgs84
+        from util.route import load_route
+        positions = route_wgs84(load_route(ROOT / name))
         return {"name": name, "coordinates": [[point["lat"], point["lng"]] for point in positions], "coordinateSystem": "WGS84"}
 
     def _consume_event(self, event):

@@ -4,8 +4,8 @@ import 'leaflet/dist/leaflet.css'
 import { Crosshair, Expand, Map as MapIcon, LocateFixed, Shrink, ExternalLink } from 'lucide-react'
 import { api, type Fix } from './api'
 
-const mapFiles:Record<string,string>={'ZJGroute.txt':'zjg','YQroute.txt':'yuquan','HNroute.txt':'haining'}
-const routeNames:Record<string,string>={'ZJGroute.txt':'紫金港','YQroute.txt':'玉泉','HNroute.txt':'海宁'}
+const mapFiles:Record<string,string>={'ZJGroute.txt':'zjg','ZJGWestTrack.geojson':'zjg','YQroute.txt':'yuquan','HNroute.txt':'haining'}
+const routeNames:Record<string,string>={'ZJGroute.txt':'紫金港','ZJGWestTrack.geojson':'紫金港西田径场','YQroute.txt':'玉泉','HNroute.txt':'海宁'}
 
 export function MapView({route,points,standalone=false,onWindow}:{route:string;points:Fix[];standalone?:boolean;onWindow:()=>void}){
   const container=useRef<HTMLDivElement>(null), map=useRef<L.Map|null>(null)

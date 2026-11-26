@@ -14,6 +14,7 @@ from geopy.distance import geodesic
 
 from session_control import RunStopped, stop_requested
 from telemetry import TrackingLocation, distance_metres, emit
+from util.route import FixedRoute
 
 
 DT = 0.2  # 定位推送间隔（秒）
@@ -204,6 +205,12 @@ def bd09Towgs84(position):
     wgs_p["lng"] = gcj_lng * 2 - gcj_lng - d_lng
     return wgs_p
 
+
+def route_wgs84(loc):
+    if isinstance(loc, FixedRoute):
+        return loc
+    return [bd09Towgs84(point) for point in loc]
+
 # get the ditance according to the latitude and longitude
 def geodistance(p1, p2):
     return geodesic((p1["lat"],p1["lng"]),(p2["lat"],p2["lng"])).m
@@ -324,8 +331,9 @@ class MetricRoute:
 async def run1(loc_sim, loc: list, model, dt=DT, *, clock=None, sleep=None):
     """Advance by real elapsed time; slow device calls do not slow the route clock."""
     clock, sleep = clock or time.monotonic, sleep or asyncio.sleep
-    varied = randLoc(loc, n=min(len(loc), random.randint(5, 9)))
-    path = MetricRoute([bd09Towgs84(point) for point in varied])
+    if not isinstance(loc, FixedRoute):
+        loc = randLoc(loc, n=min(len(loc), random.randint(5, 9)))
+    path = MetricRoute(route_wgs84(loc))
     model.start_lap()
     progress = getattr(model, "_lap_remainder", 0.0)
     if getattr(model, "_last_sample_time", None) is None:

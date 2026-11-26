@@ -7,6 +7,7 @@ on:
       - '.github/workflows/build-windows.yml'
       - 'requirements.txt'
       - '**.py'
+      - '*.geojson'
       - '*.spec'
       - 'installer.iss'
       - 'build_windows.ps1'

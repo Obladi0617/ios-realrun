@@ -5,7 +5,12 @@ import { api, type Fix, type Settings, type Snapshot } from './api'
 import { MapView } from './MapView'
 import './style.css'
 
-const names:Record<string,string>={'ZJGroute.txt':'紫金港 · 默认路线','YQroute.txt':'玉泉 · 默认路线','HNroute.txt':'海宁 · 默认路线'}
+const names:Record<string,string>={
+  'ZJGroute.txt':'紫金港 · 默认路线',
+  'ZJGWestTrack.geojson':'紫金港 · 西田径场（400 米）',
+  'YQroute.txt':'玉泉 · 默认路线',
+  'HNroute.txt':'海宁 · 默认路线',
+}
 const apps={tyys:{name:'浙大体艺',monogram:'体艺',description:'在官方 App 中完成首次协议和浙大统一身份认证。'},ding:{name:'钉钉',monogram:'钉钉',description:'使用钉钉提供的登录方式，再选择浙江大学组织。'}}
 function timeLabel(seconds:number){const value=Math.floor(seconds*10);return `${String(Math.floor(value/600)).padStart(2,'0')}:${String(Math.floor(value/10)%60).padStart(2,'0')}.${value%10}`}
 function paceLabel(speed:number){if(!Number.isFinite(speed)||speed<.1)return '—';const seconds=Math.round(1000/speed);return `${Math.floor(seconds/60)}′${String(seconds%60).padStart(2,'0')}″`}

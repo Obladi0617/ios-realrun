@@ -24,7 +24,8 @@ def version_info(filename):
             StringStruct("OriginalFilename", filename),
         ])]), VarFileInfo([VarStruct("Translation", [0x409, 1200])])],
     )
-route_datas = [(str(root / name), ".") for name in ("config.yaml", "ZJGroute.txt", "YQroute.txt", "HNroute.txt")]
+routes = runpy.run_path(str(root / "app_settings.py"))["ROUTES"]
+route_datas = [(str(root / name), ".") for name in ("config.yaml", *routes)]
 hiddenimports = []
 binaries = []
 for package in ("pymobiledevice3", "developer_disk_image", "geopy", "pytun_pmd3"):

@@ -23,7 +23,7 @@ DEFAULTS = {
     "login_tyys": "",
     "login_ding": "",
 }
-ROUTES = ("ZJGroute.txt", "YQroute.txt", "HNroute.txt")
+ROUTES = ("ZJGroute.txt", "ZJGWestTrack.geojson", "YQroute.txt", "HNroute.txt")
 
 
 def data_dir() -> Path:

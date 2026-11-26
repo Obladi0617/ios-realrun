@@ -55,7 +55,7 @@
 5. **准备配置文件**
    1. 用记事本或 VS Code 打开 `config.yaml`：
       - `v` 表示跑步速度（单位 m/s），可根据需要调整。
-      - `routeConfig` 指向使用的路线文件，可在 `HNroute.txt`、`YQroute.txt`、`ZJGroute.txt` 中选择其一，也可自行复制修改；文件内是经纬度数组，保持格式不变。
+      - `routeConfig` 指向使用的路线文件，可选择 `HNroute.txt`、`YQroute.txt`、`ZJGroute.txt` 或紫金港西田径场 `ZJGWestTrack.geojson`。自定义路线时请保留原文件的坐标格式。
    2. 如果你修改了路线文件，请确保文本内容仍然是合法的 JSON 风格字典数组，例如：`{"lat": "31.23", "lng": "121.47"}`。
 
 6. **连接设备并挂载开发者镜像**

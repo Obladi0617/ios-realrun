@@ -1,9 +1,11 @@
 import math
+from pathlib import Path
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from run import MetricRoute, build_pace_model, run1
 from telemetry import TrackingLocation, distance_metres
+from util.route import load_route
 
 
 class FakeClock:
@@ -22,6 +24,19 @@ def position(east, north=0):
 
 
 class PaceTimingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_west_track_follows_the_wgs84_loop_without_coordinate_offsets(self):
+        route = load_route(Path(__file__).resolve().parents[1] / "ZJGWestTrack.geojson")
+        self.assertEqual(route[0], route[-1])
+        path = MetricRoute(route)
+        self.assertAlmostEqual(path.length, 400, delta=1)
+
+        provider = AsyncMock()
+        clock = FakeClock()
+        model = build_pace_model(4.8, variation={"profile": "constant", "targetDistance": 5})
+        await run1(provider, route, model, clock=clock, sleep=clock.sleep)
+        self.assertEqual(provider.set.await_args_list[0].args, (route[0]["lat"], route[0]["lng"]))
+        self.assertAlmostEqual(distance_metres(path.sample(5), provider.set.await_args.args), 0, places=2)
+
     async def simulate(self, points, target, delays):
         clock = FakeClock()
         events = []
